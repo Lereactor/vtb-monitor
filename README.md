@@ -3,6 +3,25 @@
 Каждые 5 минут (GitHub Actions) проверяет публичные детекторы сбоев и официальный
 Telegram-канал ВТБ и присылает сообщение в Telegram, указывая источник.
 
+## Как устроено
+
+```
+VPS 4VPS (Новосибирск, 193.233.84.69)
+├── vtb-monitor.timer, каждые 5 мин  → проверка DETECTOR404, DownReport, DownRadar
+│                                      → сообщения через GitHub API → workflow «notify» → Telegram
+└── vtb-channel.timer, каждые 5 мин  → запускает workflow «vtb-monitor» на GitHub
+                                       → проверка канала @bankvtb → Telegram напрямую
+```
+
+С российского VPS Telegram (api.telegram.org и t.me) заблокирован, а DownRadar не пускает
+серверы GitHub — поэтому проверки на VPS, а всё, что касается Telegram, на GitHub.
+
+На VPS: код в `/opt/vtb-monitor` (пользователь `vtbmon`), состояние в `/var/lib/vtb-monitor/state.json`,
+токен GitHub (fine-grained, только этот репозиторий, Actions: read/write) в `/etc/vtb-monitor.env`.
+
+Обновить код на VPS: `sudo -u vtbmon git -C /opt/vtb-monitor pull`.
+Логи: `journalctl -u vtb-monitor -n 50`.
+
 ## Источники
 
 | Источник | Что смотрим | Сбой, когда |
