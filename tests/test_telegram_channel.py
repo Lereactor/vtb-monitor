@@ -53,3 +53,15 @@ def test_returns_new_matching_posts_only():
 def test_empty_page_is_error_and_keeps_last_id():
     result, posts, last_id = tg.check(5, FakeSession(FakeResp(200, "<html></html>")))
     assert (result.status, posts, last_id) == (ERROR, [], 5)
+
+
+def test_parse_skips_non_numeric_post_ids():
+    html = page(("abc", "Реклама"), (7, "Новость")).replace(
+        "</body>", '<div class="tgme_widget_message" data-post="bankvtb">x</div></body>')
+    assert tg.parse(html) == [(7, "Новость")]
+
+
+def test_posts_without_text_is_error_and_keeps_last_id():
+    result, posts, last_id = tg.check(5, FakeSession(FakeResp(200, page((10, ""), (11, " ")))))
+    assert (result.status, posts, last_id) == (ERROR, [], 5)
+    assert "текст" in result.details

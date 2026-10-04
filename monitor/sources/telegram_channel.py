@@ -42,7 +42,10 @@ def parse(html):
     """Returns [(post_id, text)] in page order."""
     posts = []
     for message in BeautifulSoup(html, "html.parser").select("div.tgme_widget_message[data-post]"):
-        post_id = int(message["data-post"].rsplit("/", 1)[1])
+        try:
+            post_id = int(message["data-post"].split("/")[1])
+        except (IndexError, ValueError):
+            continue
         text_el = message.select_one(".tgme_widget_message_text")
         posts.append((post_id, text_el.get_text(" ", strip=True) if text_el else ""))
     return posts
@@ -57,6 +60,8 @@ def check(last_id, session=requests):
     posts = parse(resp.content)
     if not posts:
         return SourceResult(NAME, ERROR, "не найдены посты на странице", URL), [], last_id
+    if not any(text for _, text in posts):
+        return SourceResult(NAME, ERROR, "не найден текст постов", URL), [], last_id
     newest = max(post_id for post_id, _ in posts)
     result = SourceResult(NAME, OK, f"последний пост #{newest}", URL)
     if last_id is None:  # first run: don't forward old posts
