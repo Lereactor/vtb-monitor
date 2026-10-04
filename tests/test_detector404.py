@@ -47,3 +47,20 @@ def test_bad_token_is_error():
 def test_unexpected_format_is_error():
     assert detector404.check("t", FakeSession(FakeResp(200, "<html>"))).status == ERROR
     assert detector404.check("t", FakeSession(resp({"x": 1}))).status == ERROR
+
+
+def test_prefers_known_list_key():
+    data = {"errors": [], "data": [{"service": "Банк ВТБ"}]}
+    assert detector404.check("t", FakeSession(resp(data))).status == OUTAGE
+
+
+def test_ambiguous_lists_are_error():
+    assert detector404.check("t", FakeSession(resp({"a": [], "b": []}))).status == ERROR
+
+
+def test_bare_vtb_name_is_outage():
+    assert detector404.check("t", FakeSession(resp([{"name": "ВТБ Онлайн"}]))).status == OUTAGE
+
+
+def test_other_vtb_slug_is_not_vtb():
+    assert detector404.check("t", FakeSession(resp([{"url": "/bank-vtb-armenia"}]))).status == OK

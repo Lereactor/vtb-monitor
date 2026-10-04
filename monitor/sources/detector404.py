@@ -4,6 +4,7 @@ The alert item format is not documented, so items are matched by text.
 After getting a token, check a real response and tighten `_is_vtb` if needed.
 """
 import json
+import re
 
 import requests
 
@@ -12,22 +13,25 @@ from .base import DISABLED, ERROR, OK, OUTAGE, FetchError, SourceResult, fetch
 NAME = "detector404"
 API_URL = "https://detector404.ru/api/v1/alerts"
 URL = "https://detector404.ru/bank-vtb"
-MARKERS = ("Банк ВТБ", "bank-vtb")
+# "bank-vtb" but not other VTB-group slugs such as "bank-vtb-armenia"
+VTB_RE = re.compile(r"Банк ВТБ|\bВТБ\b|bank-vtb(?![\w-])")
+LIST_KEYS = ("alerts", "data", "items", "results")
 
 
 def _alert_list(data):
     if isinstance(data, list):
         return data
-    if isinstance(data, dict):
-        for value in data.values():
-            if isinstance(value, list):
-                return value
-    return None
+    if not isinstance(data, dict):
+        return None
+    for key in LIST_KEYS:
+        if isinstance(data.get(key), list):
+            return data[key]
+    lists = [value for value in data.values() if isinstance(value, list)]
+    return lists[0] if len(lists) == 1 else None
 
 
 def _is_vtb(item):
-    text = json.dumps(item, ensure_ascii=False)
-    return any(marker in text for marker in MARKERS)
+    return bool(VTB_RE.search(json.dumps(item, ensure_ascii=False)))
 
 
 def check(token, session=requests):
