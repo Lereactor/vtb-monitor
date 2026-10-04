@@ -24,8 +24,9 @@ class FakeSession:
         self.calls.append(("GET", url, headers))
         return self._next()
 
-    def post(self, url, json=None, timeout=None):
+    def post(self, url, json=None, timeout=None, headers=None):
         self.calls.append(("POST", url, json))
+        self.headers = headers
         return self._next()
 
     def _next(self):

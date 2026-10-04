@@ -27,7 +27,7 @@ def sources(monkeypatch):
 
 def test_first_run_sends_heartbeat_and_saves_state(tmp_path, sources):
     sent = []
-    main.run(tmp_path / "state.json", sent.append, now=NOW)
+    main.run(tmp_path / "state.json", sent.extend, now=NOW)
     assert len(sent) == 1 and sent[0].startswith("💓")
     saved = st.load_state(tmp_path / "state.json")
     assert saved["telegram_last_id"] == 100
@@ -37,18 +37,18 @@ def test_first_run_sends_heartbeat_and_saves_state(tmp_path, sources):
 def test_outage_and_official_post(tmp_path, sources):
     results, tg = sources
     path = tmp_path / "state.json"
-    main.run(path, lambda text: None, now=NOW)
+    main.run(path, lambda messages: None, now=NOW)
     results["detector404"] = OUTAGE
     tg["posts"] = [Post(101, "Наблюдаются затруднения", "outage")]
     sent = []
-    main.run(path, sent.append, now=NOW)
+    main.run(path, sent.extend, now=NOW)
     assert [m[0] for m in sent] == ["📢", "🔴"]
 
 
 def test_send_failure_keeps_state_unsaved(tmp_path, sources):
     path = tmp_path / "state.json"
 
-    def broken(text):
+    def broken(messages):
         raise RuntimeError("telegram down")
 
     with pytest.raises(RuntimeError):
@@ -62,7 +62,7 @@ def test_crashing_source_is_isolated(tmp_path, sources, monkeypatch):
 
     monkeypatch.setattr(main.downreport, "check", crash)
     path = tmp_path / "state.json"
-    main.run(path, lambda text: None, now=NOW)
+    main.run(path, lambda messages: None, now=NOW)
     saved = st.load_state(path)
     assert saved["sources"]["downreport"]["last"] == ERROR
     assert saved["sources"]["downradar"]["last"] == OK
@@ -77,3 +77,31 @@ def test_crash_details_are_truncated():
     assert result.status == ERROR
     assert result.details.startswith("внутренняя ошибка: ValueError: x")
     assert len(result.details) <= 200
+
+
+def test_only_detectors_skips_channel(tmp_path, sources):
+    results, tg = sources
+    tg["posts"] = [Post(101, "Наблюдаются затруднения", "outage")]
+    path = tmp_path / "state.json"
+    sent = []
+    main.run(path, sent.extend, now=NOW, channel=False)
+    saved = st.load_state(path)
+    assert "telegram" not in saved["sources"] and saved["telegram_last_id"] is None
+    assert not any(m.startswith("📢") for m in sent)
+    assert "Telegram ВТБ" not in sent[0]  # heartbeat lists only checked sources
+
+
+def test_only_channel_skips_detectors(tmp_path, sources):
+    path = tmp_path / "state.json"
+    main.run(path, lambda messages: None, now=NOW, detectors=False)
+    assert set(st.load_state(path)["sources"]) == {"telegram"}
+
+
+def test_nothing_to_send_does_not_call_deliver(tmp_path, sources):
+    path = tmp_path / "state.json"
+    main.run(path, lambda messages: None, now=NOW)  # heartbeat sent here
+
+    def must_not_call(messages):
+        raise AssertionError(messages)
+
+    main.run(path, must_not_call, now=NOW)

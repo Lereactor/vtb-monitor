@@ -1,0 +1,41 @@
+name: notify
+
+# Relay for the VPS: Telegram is blocked there, GitHub is not.
+# The VPS calls the workflow_dispatch API with a JSON array of message texts.
+on:
+  workflow_dispatch:
+    inputs:
+      messages:
+        description: "JSON array of message texts"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MESSAGES: ${{ inputs.messages }}
+        shell: python
+        run: |
+          import json, os, urllib.error, urllib.request
+
+          url = f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage"
+          failed = 0
+          for text in json.loads(os.environ["MESSAGES"]):
+              body = json.dumps({"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": text,
+                                 "disable_web_page_preview": True}).encode()
+              request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
+              try:
+                  urllib.request.urlopen(request, timeout=15)
+              except urllib.error.HTTPError as exc:
+                  failed += 1
+                  print(f"Telegram API: HTTP {exc.code} {exc.read()[:200]!r}")
+          if failed:
+              raise SystemExit(f"{failed} message(s) not delivered")

@@ -1,4 +1,10 @@
-"""One monitoring run: python -m monitor.main [--state state.json] [--dry-run]"""
+"""One monitoring run.
+
+python -m monitor.main [--state state.json] [--only detectors|channel] [--via telegram|github|print]
+
+The VPS runs `--only detectors --via github` (Telegram is blocked there, so a
+GitHub workflow relays the messages); GitHub Actions runs `--only channel`.
+"""
 import argparse
 import os
 import sys
@@ -32,51 +38,68 @@ def _safe_telegram(last_id, session):
         return _crash_result(telegram_channel.NAME, exc), [], last_id
 
 
-def run(state_path, send, now=None, session=None):
+def run(state_path, deliver, now=None, session=None, detectors=True, channel=True):
+    """deliver(messages) must raise on failure: then state is not saved and the run is retried."""
     session = session or requests.Session()
     now = now or datetime.now(timezone.utc)
     state = st.load_state(state_path)
 
-    results = [
-        _safe_check(detector404.NAME, detector404.check, session),
-        _safe_check(downreport.NAME, downreport.check, session),
-        _safe_check(downradar.NAME, downradar.check, session),
-    ]
-    tg_result, posts, last_id = _safe_telegram(state["telegram_last_id"], session)
-    results.append(tg_result)
+    results, posts = [], []
+    if detectors:
+        results += [
+            _safe_check(detector404.NAME, detector404.check, session),
+            _safe_check(downreport.NAME, downreport.check, session),
+            _safe_check(downradar.NAME, downradar.check, session),
+        ]
+    if channel:
+        tg_result, posts, last_id = _safe_telegram(state["telegram_last_id"], session)
+        results.append(tg_result)
+        state["telegram_last_id"] = last_id
     for result in results:
         print(f"[{result.source}] {result.status} {result.details}")
 
     messages = [notifier.official_post(post) for post in posts]
     messages += st.process(state, results, now)
-    state["telegram_last_id"] = last_id
     if st.heartbeat_due(state, now):
         messages.append(notifier.heartbeat(state))
         state["last_heartbeat"] = now.astimezone(st.MSK).date().isoformat()
 
-    for message in messages:
-        send(message)  # raises on failure -> state not saved -> retried next run
+    if messages:
+        deliver(messages)
     st.save_state(state_path, state)
     return messages
+
+
+def _deliverer(via):
+    if via == "print":
+        return lambda messages: print("\n\n".join(messages))
+    if via == "github":
+        token, repo = os.environ["GITHUB_TOKEN"], os.environ["GITHUB_REPO"]
+        return lambda messages: notifier.dispatch_github(token, repo, messages)
+    token, chat_id = os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
+
+    def deliver(messages):
+        for message in messages:
+            notifier.send(token, chat_id, message)
+    return deliver
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # emoji on a cp1251 Windows console
     parser = argparse.ArgumentParser(description="VTB outage notifier")
     parser.add_argument("--state", default="state.json")
-    parser.add_argument("--dry-run", action="store_true", help="print messages instead of sending")
+    parser.add_argument("--only", choices=("detectors", "channel"),
+                        help="check only outage detectors or only the official Telegram channel")
+    parser.add_argument("--via", choices=("telegram", "github", "print"), default="telegram",
+                        help="send directly, relay through the GitHub notify workflow, or print")
+    parser.add_argument("--dry-run", action="store_true", help="same as --via print")
     args = parser.parse_args()
 
-    if args.dry_run:
-        send = print
-    else:
-        token = os.environ["TELEGRAM_BOT_TOKEN"]
-        chat_id = os.environ["TELEGRAM_CHAT_ID"]
-        send = lambda text: notifier.send(token, chat_id, text)  # noqa: E731
-
+    deliver = _deliverer("print" if args.dry_run else args.via)
     if os.environ.get("TEST_MESSAGE") == "true":
-        send("✅ Тестовое сообщение: оповещатель ВТБ подключён")
-    run(args.state, send)
+        deliver(["✅ Тестовое сообщение: оповещатель ВТБ подключён"])
+    run(args.state, deliver,
+        detectors=args.only in (None, "detectors"), channel=args.only in (None, "channel"))
 
 
 if __name__ == "__main__":

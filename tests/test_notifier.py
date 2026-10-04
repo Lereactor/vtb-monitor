@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -91,3 +92,19 @@ def test_send_keeps_text_at_limit():
 def test_send_setup_error_400_raises():
     with pytest.raises(RuntimeError, match="chat not found"):
         notifier.send("T", "1", "x", FakeSession(FakeResp(400, "Bad Request: chat not found")))
+
+
+def test_dispatch_github_posts_messages_as_json_input():
+    session = FakeSession(FakeResp(204))
+    notifier.dispatch_github("ghtok", "me/repo", ["🔴 сбой", "x" * 5000], session)
+    method, url, payload = session.calls[0]
+    assert url == "https://api.github.com/repos/me/repo/actions/workflows/notify.yml/dispatches"
+    assert session.headers["Authorization"] == "Bearer ghtok"
+    assert payload["ref"] == "main"
+    messages = json.loads(payload["inputs"]["messages"])
+    assert messages[0] == "🔴 сбой" and len(messages[1]) == 4000
+
+
+def test_dispatch_github_failure_raises():
+    with pytest.raises(RuntimeError, match="401"):
+        notifier.dispatch_github("bad", "me/repo", ["x"], FakeSession(FakeResp(401, "Bad credentials")))

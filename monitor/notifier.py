@@ -1,4 +1,5 @@
 """Message texts and Telegram Bot API sending. Plain text, no parse_mode."""
+import json
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -96,8 +97,7 @@ def send(token, chat_id, text, session=requests):
     otherwise it would block every later message forever. Any other 400
     (chat not found, group migrated) is a setup error and must fail loudly.
     """
-    if len(text) > MAX_TEXT:
-        text = text[:MAX_TEXT - 1] + "…"
+    text = _clamp(text)
     resp = session.post(f"https://api.telegram.org/bot{token}/sendMessage",
                         json={"chat_id": chat_id, "text": text,
                               "disable_web_page_preview": True},
@@ -107,3 +107,23 @@ def send(token, chat_id, text, session=requests):
         return
     if resp.status_code != 200:
         raise RuntimeError(f"Telegram API: HTTP {resp.status_code} {resp.text[:200]}")
+
+
+def _clamp(text):
+    return text if len(text) <= MAX_TEXT else text[:MAX_TEXT - 1] + "…"
+
+
+def dispatch_github(token, repo, messages, session=requests):
+    """Hand messages to the `notify` workflow, which sends them to Telegram.
+
+    Used where api.telegram.org is blocked but api.github.com is not.
+    """
+    resp = session.post(
+        f"https://api.github.com/repos/{repo}/actions/workflows/notify.yml/dispatches",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        json={"ref": "main",
+              "inputs": {"messages": json.dumps([_clamp(m) for m in messages], ensure_ascii=False)}},
+        timeout=15)
+    if resp.status_code != 204:
+        raise RuntimeError(f"GitHub dispatch: HTTP {resp.status_code} {resp.text[:200]}")
+
