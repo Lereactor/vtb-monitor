@@ -86,3 +86,8 @@ def test_send_keeps_text_at_limit():
     session = FakeSession(FakeResp(200, "{}"))
     notifier.send("T", "1", "я" * 4000, session)
     assert session.calls[0][2]["text"] == "я" * 4000
+
+
+def test_send_setup_error_400_raises():
+    with pytest.raises(RuntimeError, match="chat not found"):
+        notifier.send("T", "1", "x", FakeSession(FakeResp(400, "Bad Request: chat not found")))

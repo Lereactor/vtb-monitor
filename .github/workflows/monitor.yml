@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}  # latest state.json, not the trigger-time commit
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -40,4 +42,4 @@ jobs:
           git config user.name "vtb-monitor"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state.json
-          git diff --cached --quiet || (git commit -m "state: update" && git push)
+          git diff --cached --quiet || { git commit -m "state: update" && git pull --rebase && git push; }

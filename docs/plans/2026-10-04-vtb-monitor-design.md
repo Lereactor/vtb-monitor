@@ -49,7 +49,7 @@ Parsers that cannot find the expected marker return `SOURCE_ERROR`, never `OK`.
 - ➕ Another source joins during an incident: «сбой подтверждает X (N из M)»; N = detectors
   in outage now, M = detectors not DISABLED.
 - 🟢 No detector in outage for 2 consecutive runs: «сбой завершён, длительность». If any
-  detector is erroring or disabled at that moment, adds «(часть источников не отвечает —
+  detector is erroring at that moment (disabled = deliberate, not counted), adds «(часть источников не отвечает —
   данные неполные)».
 - ⚙️ Source in SOURCE_ERROR for 3 consecutive runs: «X не отвечает»; recovery message when back.
 - 📢 Telegram post with outage/recovery keywords: forwarded as quote + link; last seen post id stored.

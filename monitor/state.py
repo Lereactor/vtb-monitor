@@ -64,7 +64,8 @@ def _update_source(state, result, messages, incident_open):
         source.update(outage_streak=0, confirmed=OK)
         return
     if result.status == ERROR:
-        source["error_streak"] += 1
+        # capped so a source that stays down does not rewrite state.json every run
+        source["error_streak"] = min(source["error_streak"] + 1, ERROR_ALERT_RUNS)
         source["outage_streak"] = 0
         if source["error_streak"] >= ERROR_ALERT_RUNS and not source["error_reported"]:
             source["error_reported"] = True

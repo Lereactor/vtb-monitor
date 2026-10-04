@@ -237,3 +237,13 @@ def test_outage_details_are_kept():
     run(state, R("downradar", OK, "нет проблем"), minute=5)
     assert state["sources"]["downradar"]["details"] == ""
     assert state["sources"]["downradar"]["url"] == ""
+
+
+def test_persistent_error_stops_changing_state(tmp_path):
+    state = st.new_state()
+    for minute in range(0, 25, 5):
+        run(state, R("downradar", ERROR, "HTTP 403"), minute=minute)
+    st.save_state(tmp_path / "a.json", state)
+    run(state, R("downradar", ERROR, "HTTP 403"), minute=30)
+    st.save_state(tmp_path / "b.json", state)
+    assert (tmp_path / "a.json").read_text(encoding="utf-8") == (tmp_path / "b.json").read_text(encoding="utf-8")

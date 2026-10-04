@@ -86,12 +86,15 @@ def heartbeat(state):
 
 MAX_TEXT = 4000  # Telegram's limit is 4096
 
+UNDELIVERABLE = ("message is too long", "text must be non-empty")
+
 
 def send(token, chat_id, text, session=requests):
     """Raises on transient failures (state not saved, retried next run).
 
-    HTTP 400 means this message can never be delivered: log it and move on,
-    otherwise it would block every later message forever.
+    A 400 about the message text itself can never succeed: log it and move on,
+    otherwise it would block every later message forever. Any other 400
+    (chat not found, group migrated) is a setup error and must fail loudly.
     """
     if len(text) > MAX_TEXT:
         text = text[:MAX_TEXT - 1] + "…"
@@ -99,7 +102,7 @@ def send(token, chat_id, text, session=requests):
                         json={"chat_id": chat_id, "text": text,
                               "disable_web_page_preview": True},
                         timeout=15)
-    if resp.status_code == 400:
+    if resp.status_code == 400 and any(reason in resp.text for reason in UNDELIVERABLE):
         print(f"Telegram API rejected a message, dropping it: HTTP 400 {resp.text[:200]}")
         return
     if resp.status_code != 200:
