@@ -137,6 +137,16 @@ def test_disabled_source_closes_incident():
     assert state["sources"]["detector404"]["confirmed"] == OK
 
 
+def test_resolved_without_note_when_detector404_disabled():
+    state = st.new_state()
+    run(state, R("detector404", DISABLED), R("downradar", OUTAGE))
+    run(state, R("detector404", DISABLED), R("downradar", OUTAGE), minute=5)
+    run(state, R("detector404", DISABLED), R("downradar", OK), minute=10)
+    messages = run(state, R("detector404", DISABLED), R("downradar", OK), minute=15)
+    assert messages[0].startswith("🟢")
+    assert "данные неполные" not in messages[0]
+
+
 def test_resolved_without_note_when_all_sources_answer():
     state = st.new_state()
     run(state, R("detector404", OUTAGE))

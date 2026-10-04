@@ -92,8 +92,8 @@ def _counts(source):
 
 
 def _incomplete(state):
-    return any(state["sources"].get(name, {}).get("last") in (ERROR, DISABLED)
-               for name in DETECTORS)
+    # DISABLED (no token) is a deliberate setup, not missing data
+    return any(state["sources"].get(name, {}).get("last") == ERROR for name in DETECTORS)
 
 
 def process(state, results, now):
