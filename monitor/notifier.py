@@ -48,8 +48,8 @@ def incident_started(state, names, now):
     ])
 
 
-def incident_confirmed(state, name):
-    agreeing = len(state["incident"]["sources"])
+def incident_confirmed(state, name, agreeing):
+    """agreeing: detectors in outage right now (not all that ever joined)."""
     return (f"➕ ВТБ: сбой подтверждает {TITLES[name]} "
             f"({agreeing} из {_enabled_detectors(state)} детекторов)\n"
             + _source_line(state, name))

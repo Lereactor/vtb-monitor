@@ -42,6 +42,16 @@ def test_second_source_confirms():
     assert messages[0].startswith("➕ ВТБ: сбой подтверждает DownReport (2 из 2")
 
 
+def test_confirm_count_is_current_not_historical():
+    state = st.new_state()
+    run(state, R("detector404", OUTAGE), R("downreport", OK), R("downradar", OK))
+    run(state, R("detector404", OUTAGE), R("downreport", OK), R("downradar", OUTAGE), minute=5)
+    messages = run(state, R("detector404", OK), R("downreport", OUTAGE), R("downradar", OUTAGE),
+                   minute=10)
+    assert messages == [m for m in messages if m.startswith("➕ ВТБ: сбой подтверждает DownReport (2 из 3")]
+    assert len(messages) == 1
+
+
 def test_recovery_after_two_calm_runs():
     state = st.new_state()
     run(state, R("detector404", OUTAGE))

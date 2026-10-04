@@ -31,7 +31,7 @@ def test_incident_started():
 
 
 def test_incident_confirmed_counts_enabled_detectors():
-    text = notifier.incident_confirmed(STATE, "downradar")
+    text = notifier.incident_confirmed(STATE, "downradar", 1)
     assert text.startswith("➕ ВТБ: сбой подтверждает DownRadar (1 из 2 детекторов)")
 
 

@@ -90,7 +90,7 @@ def process(state, results, now):
         for name in in_outage:
             if name not in incident["sources"]:
                 incident["sources"].append(name)
-                messages.append(notifier.incident_confirmed(state, name))
+                messages.append(notifier.incident_confirmed(state, name, len(in_outage)))
     else:
         state["recovery_streak"] += 1
         if state["recovery_streak"] >= RECOVERY_RUNS:
