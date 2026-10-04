@@ -23,10 +23,10 @@ A missing token gives `DISABLED`, which is not an error.
 
 | Source | How | OUTAGE when |
 |---|---|---|
-| DETECTOR404 | API `GET /api/v1/service/{service}/status`, Bearer token | API reports a problem (response format to finalise once a token exists) |
-| DownReport | HTML `https://downreport.ru/vtb` | Verdict text is not «Массовых жалоб нет» |
+| DETECTOR404 | API `GET /api/v1/alerts` (active events), Bearer token | An active event mentions VTB (item format to finalise once a token exists) |
+| DownReport | HTML `https://downreport.ru/vtb` | Status class `text-danger` (`text-warning` «Жалобы на сбои» = isolated reports → OK) |
 | DownRadar | HTML `https://downradar.ru/ne-rabotaet/vtb.ru` | «Статус Vtb.ru : есть проблемы» (detector compares to its own baseline) |
-| Telegram @bankvtb | HTML `https://t.me/s/bankvtb` | New post matches outage keywords (official confirmation) |
+| Telegram @bankvtb | HTML `https://t.me/s/bankvtb` | Never an incident source: matching posts are forwarded as 📢 official messages; status is only source health |
 
 Excluded:
 - Downdetector: Cloudflare challenge, ToS forbids scraping; only the paid Enterprise API is legitimate.
@@ -39,7 +39,7 @@ Parsers that cannot find the expected marker return `SOURCE_ERROR`, never `OK`.
 ## Alert rules (state transitions only)
 
 - Crowd sources (DownReport, DownRadar) need `OUTAGE` on 2 consecutive runs.
-  DETECTOR404 and Telegram posts count immediately.
+  DETECTOR404 counts immediately.
 - 🔴 First source enters OUTAGE: «ВТБ: возможный сбой», source, numbers, link, all-source summary.
 - ➕ Another source joins during an incident: «сбой подтверждает X (N из M)».
 - 🟢 All sources OK for 2 consecutive runs: «сбой завершён, длительность».
@@ -47,8 +47,8 @@ Parsers that cannot find the expected marker return `SOURCE_ERROR`, never `OK`.
 - 📢 Telegram post with outage/recovery keywords: forwarded as quote + link; last seen post id stored.
 - 💓 Daily heartbeat at 09:00 MSK: «я жив», source health.
 
-Keywords: «технические работы», «технический сбой», «затруднени», «временно недоступ»,
-«не проходят», «не работает», «наблюдаются проблемы», «восстановлен», «проблема устранена».
+Keywords: see `monitor/sources/telegram_channel.py`. Recovery only on finished forms
+(«восстановлена», «устранён»), so «работаем над восстановлением» stays an outage.
 
 ## Error handling
 
