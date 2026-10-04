@@ -52,3 +52,9 @@ def test_429_retry_after_is_capped(no_sleep):
 def test_404_raises():
     with pytest.raises(FetchError, match="HTTP 404"):
         fetch("https://x", session=FakeSession(FakeResp(404)))
+
+
+def test_429_negative_retry_after_is_zero(no_sleep):
+    session = FakeSession(FakeResp(429, headers={"Retry-After": "-1"}), FakeResp(200))
+    fetch("https://x", session=session)
+    assert no_sleep == [0]

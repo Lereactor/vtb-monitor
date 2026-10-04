@@ -30,7 +30,7 @@ class FetchError(Exception):
 
 def _retry_after(resp):
     try:
-        return min(int(resp.headers.get("Retry-After", 5)), MAX_RETRY_AFTER)
+        return max(0, min(int(resp.headers.get("Retry-After", 5)), MAX_RETRY_AFTER))
     except ValueError:
         return 5
 
