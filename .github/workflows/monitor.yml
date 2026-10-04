@@ -2,9 +2,9 @@ name: vtb-monitor
 
 # Official VTB Telegram channel only: t.me is blocked on the VPS.
 
+# Triggered every 5 minutes by the VPS timer (vtb-channel.timer): GitHub's own
+# cron never started for this repo, and one clock is simpler anyway.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       test_message:
