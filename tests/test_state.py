@@ -71,11 +71,77 @@ def test_source_error_reported_once_after_three_runs():
 
 
 def test_erroring_source_keeps_incident_open():
+    # within the first 2 error runs the source is not yet written off
     state = st.new_state()
     run(state, R("detector404", OUTAGE))
     run(state, R("detector404", ERROR), minute=5)
     run(state, R("detector404", ERROR), minute=10)
     assert state["incident"] is not None
+
+
+def test_flapping_crowd_source_keeps_one_incident():
+    state = st.new_state()
+    sent = []
+    for i, status in enumerate([OUTAGE, OUTAGE, OK, OUTAGE, OUTAGE, OK, OUTAGE, OUTAGE]):
+        sent += run(state, R("downradar", status), minute=5 * i)
+    assert [m[0] for m in sent] == ["🔴"]
+    assert run(state, R("downradar", OK), minute=40) == []
+    assert state["incident"] is not None
+    messages = run(state, R("downradar", OK), minute=45)
+    assert messages[0].startswith("🟢")
+    assert state["incident"] is None
+
+
+def test_outage_during_incident_survives_short_errors():
+    # latest non-error result is OUTAGE -> still in outage while the source blips
+    state = st.new_state()
+    run(state, R("downradar", OUTAGE))
+    run(state, R("downradar", OUTAGE), minute=5)
+    run(state, R("downradar", OK), minute=10)
+    run(state, R("downradar", OUTAGE), minute=15)
+    assert run(state, R("downradar", ERROR), minute=20) == []
+    assert run(state, R("downradar", ERROR), minute=25) == []
+    assert state["incident"] is not None
+
+
+def test_written_off_source_closes_incident_with_note():
+    state = st.new_state()
+    run(state, R("detector404", OUTAGE))
+    sent = []
+    for i in range(1, 6):
+        sent += run(state, R("detector404", ERROR, "HTTP 500"), minute=5 * i)
+    assert state["incident"] is None
+    resolved = [m for m in sent if m.startswith("🟢")]
+    assert len(resolved) == 1
+    assert "(часть источников не отвечает — данные неполные)" in resolved[0]
+    assert state["sources"]["detector404"]["confirmed"] == OK
+
+
+def test_disabled_source_closes_incident():
+    state = st.new_state()
+    run(state, R("detector404", OUTAGE))
+    run(state, R("detector404", DISABLED), minute=5)
+    messages = run(state, R("detector404", DISABLED), minute=10)
+    assert messages[0].startswith("🟢")
+    assert state["incident"] is None
+    assert state["sources"]["detector404"]["confirmed"] == OK
+
+
+def test_resolved_without_note_when_all_sources_answer():
+    state = st.new_state()
+    run(state, R("detector404", OUTAGE))
+    run(state, R("detector404", OK), minute=5)
+    messages = run(state, R("detector404", OK), minute=10)
+    assert "данные неполные" not in messages[0]
+
+
+def test_error_resets_crowd_outage_streak():
+    state = st.new_state()
+    run(state, R("downradar", OUTAGE))
+    run(state, R("downradar", ERROR), minute=5)
+    assert run(state, R("downradar", OUTAGE), minute=10) == []
+    assert state["sources"]["downradar"]["confirmed"] == OK
+    assert state["incident"] is None
 
 
 def test_telegram_does_not_open_incident():

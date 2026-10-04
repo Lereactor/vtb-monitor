@@ -55,11 +55,14 @@ def incident_confirmed(state, name):
             + _source_line(state, name))
 
 
-def incident_resolved(state, now):
+def incident_resolved(state, now, partial=False):
     started = datetime.fromisoformat(state["incident"]["started_at"])
     minutes = int((now - started).total_seconds() // 60)
-    return (f"🟢 ВТБ: сбой завершён\n"
+    text = (f"🟢 ВТБ: сбой завершён\n"
             f"Длительность: {minutes} мин (с {_hm(started)} до {_hm(now)} МСК)")
+    if partial:
+        text += "\n(часть источников не отвечает — данные неполные)"
+    return text
 
 
 def source_down(result):

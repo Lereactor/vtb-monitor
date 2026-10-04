@@ -32,39 +32,53 @@ def save_state(path, state):
     Path(path).write_text(text, encoding="utf-8")
 
 
-def _update_source(state, result, messages):
+def _update_source(state, result, messages, incident_open):
     source = state["sources"].setdefault(result.source, {
         "last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
         "error_reported": False, "details": "", "url": ""})
     source["last"] = result.status
     if result.status == DISABLED:
+        source.update(outage_streak=0, confirmed=OK)
         return
     if result.status == ERROR:
         source["error_streak"] += 1
+        source["outage_streak"] = 0
         if source["error_streak"] >= ERROR_ALERT_RUNS and not source["error_reported"]:
             source["error_reported"] = True
             messages.append(notifier.source_down(result))
-        return  # keep last confirmed status while the source is silent
+        if source["error_reported"]:
+            source["confirmed"] = OK  # silent too long: its old OUTAGE no longer counts
+        return  # otherwise keep the latest non-error status while the source blips
     if source["error_reported"]:
         messages.append(notifier.source_back(result))
     source.update(error_streak=0, error_reported=False,
                   details=result.details, url=result.url)
     if result.status == OUTAGE:
         source["outage_streak"] += 1
-        needed = 1 if result.source in IMMEDIATE else CROWD_CONFIRM_RUNS
+        needed = 1 if result.source in IMMEDIATE or incident_open else CROWD_CONFIRM_RUNS
         if source["outage_streak"] >= needed:
             source["confirmed"] = OUTAGE
     else:
         source.update(outage_streak=0, confirmed=OK)
 
 
+def _counts(source):
+    return (source.get("confirmed") == OUTAGE and source.get("last") != DISABLED
+            and not source.get("error_reported"))
+
+
+def _incomplete(state):
+    return any(state["sources"].get(name, {}).get("last") in (ERROR, DISABLED)
+               for name in DETECTORS)
+
+
 def process(state, results, now):
     messages = []
+    incident_open = state["incident"] is not None
     for result in results:
-        _update_source(state, result, messages)
+        _update_source(state, result, messages, incident_open)
 
-    in_outage = [name for name in DETECTORS
-                 if state["sources"].get(name, {}).get("confirmed") == OUTAGE]
+    in_outage = [name for name in DETECTORS if _counts(state["sources"].get(name, {}))]
     incident = state["incident"]
     if incident is None:
         if in_outage:
@@ -80,7 +94,7 @@ def process(state, results, now):
     else:
         state["recovery_streak"] += 1
         if state["recovery_streak"] >= RECOVERY_RUNS:
-            messages.append(notifier.incident_resolved(state, now))
+            messages.append(notifier.incident_resolved(state, now, _incomplete(state)))
             state["incident"] = None
             state["recovery_streak"] = 0
     return messages
