@@ -1,7 +1,44 @@
 {
   "incident": null,
-  "last_heartbeat": null,
+  "last_heartbeat": "2026-10-04",
   "recovery_streak": 0,
-  "sources": {},
-  "telegram_last_id": null
+  "sources": {
+    "detector404": {
+      "confirmed": "OK",
+      "details": "",
+      "error_reported": false,
+      "error_streak": 0,
+      "last": "DISABLED",
+      "outage_streak": 0,
+      "url": ""
+    },
+    "downradar": {
+      "confirmed": "OK",
+      "details": "",
+      "error_reported": false,
+      "error_streak": 1,
+      "last": "SOURCE_ERROR",
+      "outage_streak": 0,
+      "url": ""
+    },
+    "downreport": {
+      "confirmed": "OK",
+      "details": "",
+      "error_reported": false,
+      "error_streak": 0,
+      "last": "OK",
+      "outage_streak": 0,
+      "url": ""
+    },
+    "telegram": {
+      "confirmed": "OK",
+      "details": "",
+      "error_reported": false,
+      "error_streak": 0,
+      "last": "OK",
+      "outage_streak": 0,
+      "url": ""
+    }
+  },
+  "telegram_last_id": 3829
 }
