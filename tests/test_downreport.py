@@ -46,3 +46,20 @@ def test_check_reports_fetch_error():
 def test_check_parses_page():
     result = downreport.check(FakeSession(FakeResp(200, load("downreport_ok.html"))))
     assert result.status == OK
+
+
+def test_unknown_colour_class_is_error():
+    html = load("downreport_ok.html").replace("text-success", "text-info")
+    result = downreport.parse(html)
+    assert result.status == ERROR
+    assert result.details == "неизвестный статус: Массовых жалоб нет"
+
+
+def test_no_colour_class_is_error():
+    html = load("downreport_ok.html").replace("text-success", "")
+    assert downreport.parse(html).status == ERROR
+
+
+def test_empty_status_text_is_error():
+    html = load("downreport_ok.html").replace("Массовых жалоб нет", "")
+    assert downreport.parse(html).status == ERROR
