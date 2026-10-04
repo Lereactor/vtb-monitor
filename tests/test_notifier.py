@@ -66,5 +66,23 @@ def test_send_posts_to_bot_api():
 
 
 def test_send_failure_raises():
-    with pytest.raises(RuntimeError, match="400"):
-        notifier.send("T", "1", "x", FakeSession(FakeResp(400, "Bad Request")))
+    with pytest.raises(RuntimeError, match="500"):
+        notifier.send("T", "1", "x", FakeSession(FakeResp(500, "Internal Server Error")))
+
+
+def test_send_bad_request_is_logged_not_raised(capsys):
+    notifier.send("T", "1", "x", FakeSession(FakeResp(400, "Bad Request: message is too long")))
+    assert "400" in capsys.readouterr().out
+
+
+def test_send_clamps_long_text():
+    session = FakeSession(FakeResp(200, "{}"))
+    notifier.send("T", "1", "я" * 5000, session)
+    text = session.calls[0][2]["text"]
+    assert len(text) == 4000 and text.endswith("…")
+
+
+def test_send_keeps_text_at_limit():
+    session = FakeSession(FakeResp(200, "{}"))
+    notifier.send("T", "1", "я" * 4000, session)
+    assert session.calls[0][2]["text"] == "я" * 4000

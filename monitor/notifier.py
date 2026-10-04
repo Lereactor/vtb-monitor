@@ -84,10 +84,23 @@ def heartbeat(state):
     return "💓 Оповещатель ВТБ работает\n" + _summary(state)
 
 
+MAX_TEXT = 4000  # Telegram's limit is 4096
+
+
 def send(token, chat_id, text, session=requests):
+    """Raises on transient failures (state not saved, retried next run).
+
+    HTTP 400 means this message can never be delivered: log it and move on,
+    otherwise it would block every later message forever.
+    """
+    if len(text) > MAX_TEXT:
+        text = text[:MAX_TEXT - 1] + "…"
     resp = session.post(f"https://api.telegram.org/bot{token}/sendMessage",
                         json={"chat_id": chat_id, "text": text,
                               "disable_web_page_preview": True},
                         timeout=15)
+    if resp.status_code == 400:
+        print(f"Telegram API rejected a message, dropping it: HTTP 400 {resp.text[:200]}")
+        return
     if resp.status_code != 200:
         raise RuntimeError(f"Telegram API: HTTP {resp.status_code} {resp.text[:200]}")

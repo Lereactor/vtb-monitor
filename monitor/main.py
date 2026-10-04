@@ -1,6 +1,7 @@
 """One monitoring run: python -m monitor.main [--state state.json] [--dry-run]"""
 import argparse
 import os
+import sys
 from datetime import datetime, timezone
 
 import requests
@@ -12,7 +13,8 @@ from .sources.base import ERROR, SourceResult
 
 
 def _crash_result(name, exc):
-    return SourceResult(name, ERROR, f"внутренняя ошибка: {exc.__class__.__name__}: {exc}")
+    details = f"внутренняя ошибка: {exc.__class__.__name__}: {exc}"
+    return SourceResult(name, ERROR, details[:200])
 
 
 def _safe_check(name, check, *args):
@@ -60,6 +62,7 @@ def run(state_path, send, now=None, session=None):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")  # emoji on a cp1251 Windows console
     parser = argparse.ArgumentParser(description="VTB outage notifier")
     parser.add_argument("--state", default="state.json")
     parser.add_argument("--dry-run", action="store_true", help="print messages instead of sending")

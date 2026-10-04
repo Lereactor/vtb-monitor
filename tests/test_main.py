@@ -67,3 +67,13 @@ def test_crashing_source_is_isolated(tmp_path, sources, monkeypatch):
     assert saved["sources"]["downreport"]["last"] == ERROR
     assert saved["sources"]["downradar"]["last"] == OK
     assert saved["telegram_last_id"] == 100
+
+
+def test_crash_details_are_truncated():
+    def crash(s):
+        raise ValueError("x" * 1000)
+
+    result = main._safe_check("downreport", crash, None)
+    assert result.status == ERROR
+    assert result.details.startswith("внутренняя ошибка: ValueError: x")
+    assert len(result.details) <= 200
