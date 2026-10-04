@@ -21,7 +21,7 @@ def _summary(state):
     for name in (*DETECTORS, "telegram"):
         source = state["sources"].get(name)
         if source:
-            lines.append(f"{ICONS.get(source['last'], '❔')} {TITLES[name]}")
+            lines.append(f"{ICONS.get(source.get('last'), '❔')} {TITLES[name]}")
     return "\n".join(lines)
 
 

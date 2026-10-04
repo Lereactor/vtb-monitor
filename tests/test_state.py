@@ -181,3 +181,49 @@ def test_save_and_load_roundtrip(tmp_path):
     st.save_state(path, state)
     assert st.load_state(path) == state
     assert st.load_state(tmp_path / "missing.json") == st.new_state()
+
+
+def test_load_garbage_json_starts_fresh(tmp_path, capsys):
+    path = tmp_path / "state.json"
+    path.write_text("{not json", encoding="utf-8")
+    assert st.load_state(path) == st.new_state()
+    assert "state" in capsys.readouterr().out.lower()
+
+
+def test_load_repairs_bad_sources_and_incident(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"sources": [1, 2], "incident": {}}', encoding="utf-8")
+    state = st.load_state(path)
+    assert state["sources"] == {} and state["incident"] is None
+    assert run(state, R("detector404", OK)) == []
+
+
+def test_source_entry_missing_keys(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"sources": {"downreport": {"last": "OK"}, "downradar": {}}}',
+                    encoding="utf-8")
+    state = st.load_state(path)
+    run(state, R("downreport", ERROR), R("downradar", OUTAGE))
+    run(state, R("downreport", ERROR), R("downradar", OUTAGE), minute=5)
+    assert state["sources"]["downreport"]["error_streak"] == 2
+    assert state["incident"] is not None
+
+
+def test_ok_details_do_not_churn_state(tmp_path):
+    first, second = tmp_path / "a.json", tmp_path / "b.json"
+    state = st.new_state()
+    run(state, R("downradar", OK, "нет проблем, жалоб за час: 1"))
+    st.save_state(first, state)
+    run(state, R("downradar", OK, "нет проблем, жалоб за час: 7"), minute=5)
+    st.save_state(second, state)
+    assert first.read_bytes() == second.read_bytes()
+
+
+def test_outage_details_are_kept():
+    state = st.new_state()
+    run(state, R("downradar", OUTAGE, "есть проблемы, жалоб за час: 87"))
+    assert state["sources"]["downradar"]["details"] == "есть проблемы, жалоб за час: 87"
+    assert state["sources"]["downradar"]["url"] == "https://u"
+    run(state, R("downradar", OK, "нет проблем"), minute=5)
+    assert state["sources"]["downradar"]["details"] == ""
+    assert state["sources"]["downradar"]["url"] == ""

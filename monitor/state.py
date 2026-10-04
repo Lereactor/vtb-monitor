@@ -1,6 +1,5 @@
 """Turns source results plus previous state into messages. No I/O except load/save."""
 import json
-from datetime import datetime
 from pathlib import Path
 
 from . import notifier
@@ -12,6 +11,8 @@ ERROR_ALERT_RUNS = 3
 RECOVERY_RUNS = 2
 IMMEDIATE = {"detector404"}
 HEARTBEAT_HOUR_MSK = 9
+SOURCE_DEFAULTS = {"last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
+                   "error_reported": False, "details": "", "url": ""}
 
 
 def new_state():
@@ -20,11 +21,35 @@ def new_state():
 
 
 def load_state(path):
+    """Tolerates missing, corrupt, partial or old-format state files."""
     path = Path(path)
     state = new_state()
-    if path.exists():
-        state.update(json.loads(path.read_text(encoding="utf-8")))
+    if not path.exists():
+        return state
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        print(f"WARNING: state file {path} is unreadable ({exc}); starting fresh")
+        return new_state()
+    if not isinstance(data, dict):
+        print(f"WARNING: state file {path} is not an object; starting fresh")
+        return new_state()
+    state.update(data)
+    if not isinstance(state["sources"], dict):
+        state["sources"] = {}
+    incident = state["incident"]
+    if not (isinstance(incident, dict) and "started_at" in incident
+            and isinstance(incident.get("sources"), list)):
+        state["incident"] = None
     return state
+
+
+def _source(state, name):
+    """The source's entry with any missing keys filled from SOURCE_DEFAULTS."""
+    existing = state["sources"].get(name)
+    source = {**SOURCE_DEFAULTS, **(existing if isinstance(existing, dict) else {})}
+    state["sources"][name] = source
+    return source
 
 
 def save_state(path, state):
@@ -33,9 +58,7 @@ def save_state(path, state):
 
 
 def _update_source(state, result, messages, incident_open):
-    source = state["sources"].setdefault(result.source, {
-        "last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
-        "error_reported": False, "details": "", "url": ""})
+    source = _source(state, result.source)
     source["last"] = result.status
     if result.status == DISABLED:
         source.update(outage_streak=0, confirmed=OK)
@@ -51,15 +74,16 @@ def _update_source(state, result, messages, incident_open):
         return  # otherwise keep the latest non-error status while the source blips
     if source["error_reported"]:
         messages.append(notifier.source_back(result))
-    source.update(error_streak=0, error_reported=False,
-                  details=result.details, url=result.url)
+    source.update(error_streak=0, error_reported=False)
     if result.status == OUTAGE:
+        source.update(details=result.details, url=result.url)
         source["outage_streak"] += 1
         needed = 1 if result.source in IMMEDIATE or incident_open else CROWD_CONFIRM_RUNS
         if source["outage_streak"] >= needed:
             source["confirmed"] = OUTAGE
     else:
-        source.update(outage_streak=0, confirmed=OK)
+        # OK details change every run (hourly counts): don't store them, avoid state churn
+        source.update(outage_streak=0, confirmed=OK, details="", url="")
 
 
 def _counts(source):
