@@ -38,8 +38,7 @@ def run(state_path, send, now=None, session=None):
     state = st.load_state(state_path)
 
     results = [
-        _safe_check(detector404.NAME, detector404.check,
-                    os.environ.get("DETECTOR404_TOKEN", ""), session),
+        _safe_check(detector404.NAME, detector404.check, session),
         _safe_check(downreport.NAME, downreport.check, session),
         _safe_check(downradar.NAME, downradar.check, session),
     ]

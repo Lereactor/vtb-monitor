@@ -1,66 +1,69 @@
 import json
+import re
+from pathlib import Path
 
 from monitor.sources import detector404
-from monitor.sources.base import DISABLED, ERROR, OK, OUTAGE
+from monitor.sources.base import ERROR, OK, OUTAGE
 from tests.fakes import FakeResp, FakeSession
 
-
-def resp(data):
-    return FakeResp(200, json.dumps(data, ensure_ascii=False))
-
-
-def test_no_token_is_disabled():
-    session = FakeSession()
-    assert detector404.check("", session).status == DISABLED
-    assert session.calls == []
+OK_HTML = (Path(__file__).parent / "fixtures" / "detector404_ok.html").read_text(encoding="utf-8")
+LD_RE = re.compile(r'(<script[^>]*application/ld\+json[^>]*>)(.*?)(</script>)', re.S)
 
 
-def test_sends_bearer_token():
-    session = FakeSession(resp([]))
-    detector404.check("secret", session)
-    assert session.calls[0][2]["Authorization"] == "Bearer secret"
+def with_flags(network=None, cities=None, complaints=None):
+    """OK page with the dataset flags overridden (None = keep)."""
+    def edit(match):
+        data = json.loads(match.group(2))
+        for node in data["@graph"]:
+            for prop in node.get("variableMeasured", []) if isinstance(node, dict) else []:
+                if prop["name"] == "Сервис недоступен по сети":
+                    if network is not None:
+                        prop["value"] = network
+                    if cities is not None:
+                        prop["valueReference"]["value"] = cities
+                if prop["name"] == "Много жалоб пользователей" and complaints is not None:
+                    prop["value"] = complaints
+        return match.group(1) + json.dumps(data, ensure_ascii=False) + match.group(3)
+    return LD_RE.sub(edit, OK_HTML, count=1)
 
 
-def test_vtb_alert_is_outage():
-    data = [{"service": "Сбербанк"}, {"service": "Банк ВТБ", "reports": 87}]
-    result = detector404.check("t", FakeSession(resp(data)))
-    assert result.status == OUTAGE
-    assert "87" in result.details
-
-
-def test_alerts_wrapped_in_dict():
-    result = detector404.check("t", FakeSession(resp({"data": [{"url": "/bank-vtb"}]})))
-    assert result.status == OUTAGE
-
-
-def test_no_vtb_alert_is_ok():
-    result = detector404.check("t", FakeSession(resp([{"service": "Сбербанк"}])))
+def test_ok_page():
+    result = detector404.parse(OK_HTML)
     assert result.status == OK
+    assert result.url == detector404.URL
 
 
-def test_bad_token_is_error():
-    result = detector404.check("t", FakeSession(FakeResp(401)))
+def test_network_down_is_outage_with_city_count():
+    result = detector404.parse(with_flags(network=True, cities=7))
+    assert result.status == OUTAGE
+    assert "сенсоры: недоступен в 7 городах" in result.details
+
+
+def test_many_complaints_is_outage():
+    result = detector404.parse(with_flags(complaints=True))
+    assert result.status == OUTAGE
+    assert "много жалоб" in result.details
+
+
+def test_missing_dataset_is_error():
+    assert detector404.parse("<html><body>нет данных</body></html>").status == ERROR
+
+
+def test_missing_flag_is_error():
+    html = OK_HTML.replace("Много жалоб пользователей", "Что-то другое")
+    assert detector404.parse(html).status == ERROR
+
+
+def test_broken_json_is_error():
+    html = '<script type="application/ld+json">{not json</script>'
+    assert detector404.parse(html).status == ERROR
+
+
+def test_check_reports_fetch_error():
+    result = detector404.check(FakeSession(FakeResp(403)))
     assert result.status == ERROR
-    assert "токен" in result.details
+    assert "403" in result.details
 
 
-def test_unexpected_format_is_error():
-    assert detector404.check("t", FakeSession(FakeResp(200, "<html>"))).status == ERROR
-    assert detector404.check("t", FakeSession(resp({"x": 1}))).status == ERROR
-
-
-def test_prefers_known_list_key():
-    data = {"errors": [], "data": [{"service": "Банк ВТБ"}]}
-    assert detector404.check("t", FakeSession(resp(data))).status == OUTAGE
-
-
-def test_ambiguous_lists_are_error():
-    assert detector404.check("t", FakeSession(resp({"a": [], "b": []}))).status == ERROR
-
-
-def test_bare_vtb_name_is_outage():
-    assert detector404.check("t", FakeSession(resp([{"name": "ВТБ Онлайн"}]))).status == OUTAGE
-
-
-def test_other_vtb_slug_is_not_vtb():
-    assert detector404.check("t", FakeSession(resp([{"url": "/bank-vtb-armenia"}]))).status == OK
+def test_check_parses_page():
+    assert detector404.check(FakeSession(FakeResp(200, OK_HTML))).status == OK

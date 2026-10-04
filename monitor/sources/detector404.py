@@ -1,54 +1,61 @@
-"""DETECTOR404 API: active events, includes its own sensors in 34 Russian cities.
-
-The alert item format is not documented, so items are matched by text.
-After getting a token, check a real response and tighten `_is_vtb` if needed.
+"""DETECTOR404: the public VTB page carries a schema.org Dataset with two verdicts:
+network unavailability from its own sensors in 34 Russian cities, and a
+"too many user complaints" flag. No account or API token needed.
 """
 import json
 import re
 
 import requests
+from bs4 import BeautifulSoup
 
-from .base import DISABLED, ERROR, OK, OUTAGE, FetchError, SourceResult, fetch
+from .base import ERROR, OK, OUTAGE, FetchError, SourceResult, fetch
 
 NAME = "detector404"
-API_URL = "https://detector404.ru/api/v1/alerts"
 URL = "https://detector404.ru/bank-vtb"
-# "bank-vtb" but not other VTB-group slugs such as "bank-vtb-armenia"
-VTB_RE = re.compile(r"Банк ВТБ|\bВТБ\b|bank-vtb(?![\w-])")
-LIST_KEYS = ("alerts", "data", "items", "results")
+NETWORK = "Сервис недоступен по сети"
+COMPLAINTS = "Много жалоб пользователей"
 
 
-def _alert_list(data):
-    if isinstance(data, list):
-        return data
-    if not isinstance(data, dict):
-        return None
-    for key in LIST_KEYS:
-        if isinstance(data.get(key), list):
-            return data[key]
-    lists = [value for value in data.values() if isinstance(value, list)]
-    return lists[0] if len(lists) == 1 else None
+def _flags(html):
+    """Returns {measured property name: property dict} or None."""
+    for script in BeautifulSoup(html, "html.parser").find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+        except ValueError:
+            continue
+        nodes = data.get("@graph", [data]) if isinstance(data, dict) else data
+        for node in nodes:
+            if isinstance(node, dict) and node.get("@type") == "Dataset":
+                return {prop.get("name"): prop for prop in node.get("variableMeasured", [])
+                        if isinstance(prop, dict)}
+    return None
 
 
-def _is_vtb(item):
-    return bool(VTB_RE.search(json.dumps(item, ensure_ascii=False)))
+def parse(html):
+    flags = _flags(html)
+    if flags is None:
+        return SourceResult(NAME, ERROR, "не найден блок данных на странице", URL)
+    network, complaints = flags.get(NETWORK), flags.get(COMPLAINTS)
+    if network is None or complaints is None:
+        return SourceResult(NAME, ERROR, "не найдены флаги статуса на странице", URL)
+    if not isinstance(network.get("value"), bool) or not isinstance(complaints.get("value"), bool):
+        return SourceResult(NAME, ERROR, "неожиданный формат флагов", URL)
+
+    problems = []
+    if network["value"]:
+        cities = (network.get("valueReference") or {}).get("value")
+        problems.append(f"сенсоры: недоступен в {cities} городах" if cities
+                        else "сенсоры: недоступен по сети")
+    if complaints["value"]:
+        problems.append("много жалоб пользователей")
+    if problems:
+        return SourceResult(NAME, OUTAGE, "; ".join(problems), URL)
+    return SourceResult(NAME, OK, "сенсоры и жалобы в норме", URL)
 
 
-def check(token, session=requests):
-    if not token:
-        return SourceResult(NAME, DISABLED, "нет токена", URL)
+def check(session=requests):
     try:
-        resp = fetch(API_URL, headers={"Authorization": f"Bearer {token}"}, session=session)
+        resp = fetch(URL, session=session)
     except FetchError as exc:
-        hint = " (проверьте токен)" if str(exc) in ("HTTP 401", "HTTP 403") else ""
-        return SourceResult(NAME, ERROR, f"{exc}{hint}", URL)
-    try:
-        alerts = _alert_list(resp.json())
-    except ValueError:
-        alerts = None
-    if alerts is None:
-        return SourceResult(NAME, ERROR, f"неожиданный ответ API: {resp.text[:150]}", URL)
-    vtb = [item for item in alerts if _is_vtb(item)]
-    if vtb:
-        return SourceResult(NAME, OUTAGE, json.dumps(vtb[0], ensure_ascii=False)[:300], URL)
-    return SourceResult(NAME, OK, "активных событий нет", URL)
+        return SourceResult(NAME, ERROR, str(exc), URL)
+    return parse(resp.content)

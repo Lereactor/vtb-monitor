@@ -7,7 +7,7 @@ Telegram-канал ВТБ и присылает сообщение в Telegram,
 
 | Источник | Что смотрим | Сбой, когда |
 |---|---|---|
-| DETECTOR404 | API `/api/v1/alerts` (нужен токен; сенсоры в 34 городах РФ) | есть активное событие по ВТБ — сразу |
+| DETECTOR404 | `detector404.ru/bank-vtb`, машиночитаемый блок schema.org (без токена) | сенсоры в 34 городах РФ видят недоступность или «много жалоб» — сразу |
 | DownReport | `downreport.ru/vtb` | красный статус 2 прогона подряд (жёлтый «Жалобы на сбои» = единичные жалобы, не сбой) |
 | DownRadar | `downradar.ru/ne-rabotaet/vtb.ru` | «есть проблемы» 2 прогона подряд (сайт сам сравнивает с нормой для этого часа) |
 | Telegram @bankvtb | `t.me/s/bankvtb` | пост со словами о сбое/восстановлении пересылается как 📢 |
@@ -29,11 +29,9 @@ Downdetector не используется: сайт закрыт Cloudflare-п�
 1. **Бот:** в Telegram напишите [@BotFather](https://t.me/BotFather) → `/newbot` → получите токен.
 2. **chat_id:** напишите своему боту любое сообщение, откройте
    `https://api.telegram.org/bot<ТОКЕН>/getUpdates` и возьмите `message.chat.id`.
-3. **DETECTOR404 (необязательно):** зарегистрируйтесь на detector404.ru → профиль → API →
-   сгенерировать токен. Без токена источник просто выключен (⚪).
-4. **Секреты:** Settings → Secrets and variables → Actions → New repository secret:
-   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `DETECTOR404_TOKEN`.
-5. **Проверка:** Actions → vtb-monitor → Run workflow → галка «Отправить тестовое сообщение».
+3. **Секреты:** Settings → Secrets and variables → Actions → New repository secret:
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+4. **Проверка:** Actions → vtb-monitor → Run workflow → галка «Отправить тестовое сообщение».
 
 ## Локально
 
@@ -48,6 +46,6 @@ python -m monitor.main --dry-run --state /tmp/state.json   # печатает в
 - Расписание GitHub Actions: раз в 5 минут, но реальные задержки 5–15 минут.
 - `state.json` публичный (репозиторий открытый): в нём только статусы источников.
 - `t.me/s/` показывает ~20 последних постов: если оповещатель долго не работал, старые посты могут быть пропущены.
-- Формат ответа DETECTOR404 API не документирован — после получения токена сверить реальный ответ
-  и при необходимости уточнить `monitor/sources/detector404.py`.
+- DETECTOR404 и DownRadar стоят за защитой от DDoS (QRATOR, Cloudflare) и могут отвечать
+  серверам GitHub ошибкой 403 — тогда придёт ⚙️ «не отвечает».
 - Жалобы пользователей ≠ подтверждённый сбой. Официальное подтверждение — только 📢 от банка.

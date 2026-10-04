@@ -15,7 +15,7 @@ def sources(monkeypatch):
     results = {"detector404": OK, "downreport": OK, "downradar": OK}
     tg = {"posts": [], "last_id": 100}
     monkeypatch.setattr(main.detector404, "check",
-                        lambda token, s: SourceResult("detector404", results["detector404"]))
+                        lambda s: SourceResult("detector404", results["detector404"]))
     monkeypatch.setattr(main.downreport, "check",
                         lambda s: SourceResult("downreport", results["downreport"]))
     monkeypatch.setattr(main.downradar, "check",

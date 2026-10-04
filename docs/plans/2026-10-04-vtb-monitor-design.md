@@ -14,7 +14,7 @@ report a VTB outage, naming the source(s). Report recovery and broken sources to
 - One Python script per run, ~20 s. Deps: `requests`, `beautifulsoup4`.
 - `concurrency: vtb-monitor` — no overlapping runs.
 - State in `state.json`, committed back by the workflow only when changed.
-- Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `DETECTOR404_TOKEN` (optional).
+- Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
 
 ## Sources
 
@@ -23,7 +23,7 @@ A missing token gives `DISABLED`, which is not an error.
 
 | Source | How | OUTAGE when |
 |---|---|---|
-| DETECTOR404 | API `GET /api/v1/alerts` (active events), Bearer token | An active event mentions VTB (item format to finalise once a token exists) |
+| DETECTOR404 | HTML `https://detector404.ru/bank-vtb`, schema.org Dataset in ld+json (no token; registration form was broken) | «Сервис недоступен по сети» (sensors, 34 cities) or «Много жалоб пользователей» is true |
 | DownReport | HTML `https://downreport.ru/vtb` | Status class `text-danger` (`text-warning` «Жалобы на сбои» = isolated reports → OK) |
 | DownRadar | HTML `https://downradar.ru/ne-rabotaet/vtb.ru` | «Статус Vtb.ru : есть проблемы» (detector compares to its own baseline) |
 | Telegram @bankvtb | HTML `https://t.me/s/bankvtb` | Never an incident source: matching posts are forwarded as 📢 official messages; status is only source health |

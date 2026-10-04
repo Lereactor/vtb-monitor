@@ -35,7 +35,6 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DETECTOR404_TOKEN: ${{ secrets.DETECTOR404_TOKEN }}
           TEST_MESSAGE: ${{ inputs.test_message }}
       - name: Save state
         run: |
