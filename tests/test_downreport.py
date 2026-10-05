@@ -30,7 +30,7 @@ def test_danger_is_outage():
     result = downreport.parse(html)
     assert result.status == OUTAGE
     assert "Массовый сбой" in result.details
-    assert result.url == downreport.URL
+    assert result.url == "https://downreport.ru/vtb"
 
 
 def test_missing_status_is_error():

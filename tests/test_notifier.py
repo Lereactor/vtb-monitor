@@ -23,7 +23,7 @@ STATE = {
 
 
 def test_incident_started():
-    text = notifier.incident_started(STATE, ["downradar"], NOW)
+    text = notifier.incident_started(STATE, "vtb", ["downradar"], NOW)
     assert text.startswith("🔴 ВТБ: возможный сбой")
     assert "Источник: DownRadar" in text
     assert "жалоб за час: 87" in text
@@ -32,19 +32,20 @@ def test_incident_started():
 
 
 def test_incident_confirmed_counts_enabled_detectors():
-    text = notifier.incident_confirmed(STATE, "downradar", 1)
+    text = notifier.incident_confirmed(STATE, "vtb", "downradar", 1)
     assert text.startswith("➕ ВТБ: сбой подтверждает DownRadar (1 из 2 детекторов)")
 
 
 def test_incident_resolved_duration():
-    text = notifier.incident_resolved(STATE, NOW)
+    text = notifier.incident_resolved(STATE, "vtb", NOW)
     assert "47 мин" in text and "14:03" in text and "14:50" in text
 
 
 def test_source_messages():
     result = SourceResult("downreport", ERROR, "HTTP 403")
-    assert notifier.source_down(result) == "⚙️ DownReport не отвечает (HTTP 403). Сигналы этого источника не учитываются."
-    assert notifier.source_back(result) == "⚙️ DownReport снова работает"
+    assert notifier.source_down("vtb", result) == ("⚙️ ВТБ · DownReport не отвечает (HTTP 403). "
+                                                   "Сигналы этого источника не учитываются.")
+    assert notifier.source_back("invest", result) == "⚙️ ВТБ Мои Инвестиции · DownReport снова работает"
 
 
 def test_official_post():
@@ -54,8 +55,26 @@ def test_official_post():
     assert "https://t.me/bankvtb/12" in text
 
 
-def test_heartbeat():
-    assert notifier.heartbeat(STATE).startswith("💓 Оповещатель ВТБ работает")
+def test_official_post_about_investments_is_tagged():
+    text = notifier.official_post(Post(13, "Наблюдаются сбои в приложении ВТБ Мои Инвестиции", "outage"))
+    assert text.startswith("📢 ВТБ официально сообщает о проблемах (Мои Инвестиции)")
+
+
+def test_incident_titles_name_the_service():
+    assert notifier.incident_started(STATE, "invest", ["downradar"], NOW).startswith(
+        "🔴 ВТБ Мои Инвестиции: возможный сбой")
+    assert notifier.incident_resolved(STATE, "invest", NOW).startswith(
+        "🟢 ВТБ Мои Инвестиции: сбой завершён")
+
+
+def test_heartbeat_lists_each_service():
+    state = {"services": {"vtb": STATE,
+                          "invest": {"sources": {"detector404": src(OK), "downradar": src(ERROR)},
+                                     "incident": None}}}
+    assert notifier.heartbeat(state) == (
+        "💓 Оповещатель ВТБ работает\n\n"
+        "ВТБ:\n🟢 DownReport\n🔴 DownRadar\n🟢 Telegram ВТБ\n\n"
+        "ВТБ Мои Инвестиции:\n🟢 DETECTOR404\n⚙️ DownRadar")
 
 
 def test_send_posts_to_bot_api():

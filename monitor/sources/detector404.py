@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from .base import ERROR, OK, OUTAGE, FetchError, SourceResult, fetch
 
 NAME = "detector404"
-URL = "https://detector404.ru/bank-vtb"
+PAGE = "bank-vtb"
 NETWORK = "Сервис недоступен по сети"
 COMPLAINTS = "Много жалоб пользователей"
 
@@ -31,15 +31,20 @@ def _flags(html):
     return None
 
 
-def parse(html):
+def _url(page):
+    return f"https://detector404.ru/{page}"
+
+
+def parse(html, page=PAGE):
+    url = _url(page)
     flags = _flags(html)
     if flags is None:
-        return SourceResult(NAME, ERROR, "не найден блок данных на странице", URL)
+        return SourceResult(NAME, ERROR, "не найден блок данных на странице", url)
     network, complaints = flags.get(NETWORK), flags.get(COMPLAINTS)
     if network is None or complaints is None:
-        return SourceResult(NAME, ERROR, "не найдены флаги статуса на странице", URL)
+        return SourceResult(NAME, ERROR, "не найдены флаги статуса на странице", url)
     if not isinstance(network.get("value"), bool) or not isinstance(complaints.get("value"), bool):
-        return SourceResult(NAME, ERROR, "неожиданный формат флагов", URL)
+        return SourceResult(NAME, ERROR, "неожиданный формат флагов", url)
 
     problems = []
     if network["value"]:
@@ -49,13 +54,13 @@ def parse(html):
     if complaints["value"]:
         problems.append("много жалоб пользователей")
     if problems:
-        return SourceResult(NAME, OUTAGE, "; ".join(problems), URL)
-    return SourceResult(NAME, OK, "сенсоры и жалобы в норме", URL)
+        return SourceResult(NAME, OUTAGE, "; ".join(problems), url)
+    return SourceResult(NAME, OK, "сенсоры и жалобы в норме", url)
 
 
-def check(session=requests):
+def check(session=requests, page=PAGE):
     try:
-        resp = fetch(URL, session=session)
+        resp = fetch(_url(page), session=session)
     except FetchError as exc:
-        return SourceResult(NAME, ERROR, str(exc), URL)
-    return parse(resp.content)
+        return SourceResult(NAME, ERROR, str(exc), _url(page))
+    return parse(resp.content, page)

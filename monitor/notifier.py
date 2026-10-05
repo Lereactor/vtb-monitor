@@ -1,88 +1,101 @@
 """Message texts and Telegram Bot API sending. Plain text, no parse_mode."""
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import requests
 
+from .services import CHANNEL_SERVICE, SERVICES
 from .sources.base import DISABLED, ERROR, OK, OUTAGE
 
 MSK = timezone(timedelta(hours=3))
-DETECTORS = ("detector404", "downreport", "downradar", "sboyrf")
 TITLES = {"detector404": "DETECTOR404", "downreport": "DownReport",
           "downradar": "DownRadar", "sboyrf": "СБОЙ.РФ", "telegram": "Telegram ВТБ"}
 ICONS = {OK: "🟢", OUTAGE: "🔴", ERROR: "⚙️", DISABLED: "⚪"}
+INVEST_RE = re.compile(r"инвест|брокер", re.I)
 
 
 def _hm(moment):
     return moment.astimezone(MSK).strftime("%H:%M")
 
 
-def _summary(state):
+def _title(service_id):
+    return SERVICES[service_id].title
+
+
+def _summary(svc, service_id):
+    names = list(SERVICES[service_id].detectors)
+    if service_id == CHANNEL_SERVICE:
+        names.append("telegram")
     lines = []
-    for name in (*DETECTORS, "telegram"):
-        source = state["sources"].get(name)
+    for name in names:
+        source = svc["sources"].get(name)
         if source:
             lines.append(f"{ICONS.get(source.get('last'), '❔')} {TITLES[name]}")
     return "\n".join(lines)
 
 
-def _enabled_detectors(state):
-    return sum(1 for name in DETECTORS
-               if state["sources"].get(name, {}).get("last", DISABLED) != DISABLED)
+def _enabled_detectors(svc, service_id):
+    return sum(1 for name in SERVICES[service_id].detectors
+               if svc["sources"].get(name, {}).get("last", DISABLED) != DISABLED)
 
 
-def _source_line(state, name):
-    source = state["sources"][name]
+def _source_line(svc, name):
+    source = svc["sources"][name]
     line = f"• {TITLES[name]}: {source['details']}"
     return line + (f"\n  {source['url']}" if source["url"] else "")
 
 
-def incident_started(state, names, now):
+def incident_started(svc, service_id, names, now):
     return "\n".join([
-        "🔴 ВТБ: возможный сбой",
+        f"🔴 {_title(service_id)}: возможный сбой",
         "Источник: " + ", ".join(TITLES[n] for n in names),
-        *(_source_line(state, n) for n in names),
+        *(_source_line(svc, n) for n in names),
         f"Время: {_hm(now)} МСК",
         "",
         "Источники сейчас:",
-        _summary(state),
+        _summary(svc, service_id),
     ])
 
 
-def incident_confirmed(state, name, agreeing):
+def incident_confirmed(svc, service_id, name, agreeing):
     """agreeing: detectors in outage right now (not all that ever joined)."""
-    return (f"➕ ВТБ: сбой подтверждает {TITLES[name]} "
-            f"({agreeing} из {_enabled_detectors(state)} детекторов)\n"
-            + _source_line(state, name))
+    return (f"➕ {_title(service_id)}: сбой подтверждает {TITLES[name]} "
+            f"({agreeing} из {_enabled_detectors(svc, service_id)} детекторов)\n"
+            + _source_line(svc, name))
 
 
-def incident_resolved(state, now, partial=False):
-    started = datetime.fromisoformat(state["incident"]["started_at"])
+def incident_resolved(svc, service_id, now, partial=False):
+    started = datetime.fromisoformat(svc["incident"]["started_at"])
     minutes = int((now - started).total_seconds() // 60)
-    text = (f"🟢 ВТБ: сбой завершён\n"
+    text = (f"🟢 {_title(service_id)}: сбой завершён\n"
             f"Длительность: {minutes} мин (с {_hm(started)} до {_hm(now)} МСК)")
     if partial:
         text += "\n(часть источников не отвечает — данные неполные)"
     return text
 
 
-def source_down(result):
-    return (f"⚙️ {TITLES[result.source]} не отвечает ({result.details}). "
+def source_down(service_id, result):
+    return (f"⚙️ {_title(service_id)} · {TITLES[result.source]} не отвечает ({result.details}). "
             "Сигналы этого источника не учитываются.")
 
 
-def source_back(result):
-    return f"⚙️ {TITLES[result.source]} снова работает"
+def source_back(service_id, result):
+    return f"⚙️ {_title(service_id)} · {TITLES[result.source]} снова работает"
 
 
 def official_post(post):
     what = "о проблемах" if post.kind == "outage" else "о восстановлении"
+    about = " (Мои Инвестиции)" if INVEST_RE.search(post.text) else ""
     text = post.text if len(post.text) <= 700 else post.text[:700] + "…"
-    return f"📢 ВТБ официально сообщает {what}\n«{text}»\n{post.url}"
+    return f"📢 ВТБ официально сообщает {what}{about}\n«{text}»\n{post.url}"
 
 
 def heartbeat(state):
-    return "💓 Оповещатель ВТБ работает\n" + _summary(state)
+    sections = [f"{_title(service_id)}:\n{_summary(svc, service_id)}"
+                for service_id, svc in state["services"].items()
+                if service_id in SERVICES and svc["sources"]]
+    return "\n\n".join(["💓 Оповещатель ВТБ работает", *sections])
 
 
 MAX_TEXT = 4000  # Telegram's limit is 4096

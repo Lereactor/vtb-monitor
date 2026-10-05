@@ -8,14 +8,21 @@ GitHub workflow relays the messages); GitHub Actions runs `--only channel`.
 import argparse
 import os
 import sys
+import time
 from datetime import datetime, timezone
 
 import requests
 
 from . import notifier
 from . import state as st
+from .services import CHANNEL_SERVICE, SERVICES
 from .sources import detector404, downradar, downreport, sboyrf, telegram_channel
 from .sources.base import ERROR, SourceResult
+
+SOURCES = {module.NAME: module for module in (detector404, downreport, downradar, sboyrf)}
+# DownRadar starts timing out on back-to-back requests: space out a second page on the same site
+SAME_SITE_PAUSE = 5
+sleep = time.sleep  # replaced in tests
 
 
 def _crash_result(name, exc):
@@ -44,23 +51,28 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     now = now or datetime.now(timezone.utc)
     state = st.load_state(state_path)
 
-    results, posts = [], []
+    results = {service_id: [] for service_id in SERVICES}
+    posts = []
     if detectors:
-        results += [
-            _safe_check(detector404.NAME, detector404.check, session),
-            _safe_check(downreport.NAME, downreport.check, session),
-            _safe_check(downradar.NAME, downradar.check, session),
-            _safe_check(sboyrf.NAME, sboyrf.check, session),
-        ]
+        visited = set()
+        for service_id, service in SERVICES.items():
+            for name, page in service.detectors.items():
+                if name in visited:
+                    sleep(SAME_SITE_PAUSE)
+                visited.add(name)
+                result = _safe_check(name, SOURCES[name].check, session, page)
+                print(f"[{service_id}/{result.source}] {result.status} {result.details}")
+                results[service_id].append(result)
     if channel:
         tg_result, posts, last_id = _safe_telegram(state["telegram_last_id"], session)
-        results.append(tg_result)
+        print(f"[{tg_result.source}] {tg_result.status} {tg_result.details}")
+        results[CHANNEL_SERVICE].append(tg_result)
         state["telegram_last_id"] = last_id
-    for result in results:
-        print(f"[{result.source}] {result.status} {result.details}")
 
     messages = [notifier.official_post(post) for post in posts]
-    messages += st.process(state, results, now)
+    for service_id, service_results in results.items():
+        if service_results:
+            messages += st.process(state, service_id, service_results, now)
     if st.heartbeat_due(state, now):
         messages.append(notifier.heartbeat(state))
         state["last_heartbeat"] = now.astimezone(st.MSK).date().isoformat()

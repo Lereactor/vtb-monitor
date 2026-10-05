@@ -13,8 +13,7 @@ import requests
 from .base import ERROR, OK, OUTAGE, FetchError, SourceResult, fetch
 
 NAME = "sboyrf"
-URL = "https://сбой.рф/bank-vtb"
-FETCH_URL = "https://xn--90aqok.xn--p1ai/bank-vtb"
+PAGE = "bank-vtb"
 # a normal day has several 20-40 complaint bursts per hour
 HOUR_THRESHOLD = 50
 BUCKETS_PER_HOUR = 4
@@ -22,28 +21,29 @@ DAY_CHART_RE = re.compile(r"getElementById\('myChart'\).*?var data = (\[[^\]]*\]
 TODAY_RE = re.compile(r"жалоб за сегодня:\s*<b>(\d+)")
 
 
-def parse(html):
+def parse(html, page=PAGE):
+    url = f"https://сбой.рф/{page}"
     if isinstance(html, bytes):
         html = html.decode("utf-8", "replace")
     match = DAY_CHART_RE.search(html)
     if match is None:
-        return SourceResult(NAME, ERROR, "не найден график жалоб на странице", URL)
+        return SourceResult(NAME, ERROR, "не найден график жалоб на странице", url)
     try:
         series = json.loads(match.group(1))
     except ValueError:
-        return SourceResult(NAME, ERROR, "не удалось прочитать график жалоб", URL)
+        return SourceResult(NAME, ERROR, "не удалось прочитать график жалоб", url)
     if len(series) < BUCKETS_PER_HOUR or not all(isinstance(n, int) for n in series):
-        return SourceResult(NAME, ERROR, "неожиданный формат графика жалоб", URL)
+        return SourceResult(NAME, ERROR, "неожиданный формат графика жалоб", url)
     hour = sum(series[-BUCKETS_PER_HOUR:])
     today = TODAY_RE.search(html)
     details = f"жалоб за час: {hour}" + (f", за сегодня: {today.group(1)}" if today else "")
-    return SourceResult(NAME, OUTAGE if hour >= HOUR_THRESHOLD else OK, details, URL)
+    return SourceResult(NAME, OUTAGE if hour >= HOUR_THRESHOLD else OK, details, url)
 
 
-def check(session=requests):
+def check(session=requests, page=PAGE):
     # the site serves a page cache that can be hours old; a query string bypasses it
     try:
-        resp = fetch(f"{FETCH_URL}?t={int(time.time())}", session=session)
+        resp = fetch(f"https://xn--90aqok.xn--p1ai/{page}?t={int(time.time())}", session=session)
     except FetchError as exc:
-        return SourceResult(NAME, ERROR, str(exc), URL)
-    return parse(resp.content)
+        return SourceResult(NAME, ERROR, str(exc), f"https://сбой.рф/{page}")
+    return parse(resp.content, page)

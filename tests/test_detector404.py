@@ -30,7 +30,7 @@ def with_flags(network=None, cities=None, complaints=None):
 def test_ok_page():
     result = detector404.parse(OK_HTML)
     assert result.status == OK
-    assert result.url == detector404.URL
+    assert result.url == "https://detector404.ru/bank-vtb"
 
 
 def test_network_down_is_outage_with_city_count():
@@ -67,3 +67,18 @@ def test_check_reports_fetch_error():
 
 def test_check_parses_page():
     assert detector404.check(FakeSession(FakeResp(200, OK_HTML))).status == OK
+
+
+INVEST_HTML = (Path(__file__).parent / "fixtures" / "detector404_invest_ok.html").read_bytes()
+
+
+def test_invest_page():
+    result = detector404.parse(INVEST_HTML, "vtbinvesticii")
+    assert result.status == OK
+    assert result.url == "https://detector404.ru/vtbinvesticii"
+
+
+def test_check_fetches_given_page():
+    session = FakeSession(FakeResp(200, INVEST_HTML.decode("utf-8")))
+    detector404.check(session, "vtbinvesticii")
+    assert session.calls[0][1] == "https://detector404.ru/vtbinvesticii"

@@ -1,9 +1,13 @@
-"""Turns source results plus previous state into messages. No I/O except load/save."""
+"""Turns source results plus previous state into messages. No I/O except load/save.
+
+Each monitored service keeps its own sources and incident under state["services"].
+"""
 import json
 from pathlib import Path
 
 from . import notifier
-from .notifier import DETECTORS, MSK
+from .notifier import MSK
+from .services import SERVICES
 from .sources.base import DISABLED, ERROR, OK, OUTAGE
 
 CROWD_CONFIRM_RUNS = 2
@@ -13,11 +17,15 @@ IMMEDIATE = {"detector404"}
 HEARTBEAT_HOUR_MSK = 9
 SOURCE_DEFAULTS = {"last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
                    "error_reported": False, "details": "", "url": ""}
+SERVICE_KEYS = ("sources", "incident", "recovery_streak")
 
 
 def new_state():
-    return {"sources": {}, "incident": None, "recovery_streak": 0,
-            "telegram_last_id": None, "last_heartbeat": None}
+    return {"services": {}, "telegram_last_id": None, "last_heartbeat": None}
+
+
+def new_service_state():
+    return {"sources": {}, "incident": None, "recovery_streak": 0}
 
 
 def load_state(path):
@@ -34,21 +42,36 @@ def load_state(path):
     if not isinstance(data, dict):
         print(f"WARNING: state file {path} is not an object; starting fresh")
         return new_state()
+    if "services" not in data and any(key in data for key in SERVICE_KEYS):
+        # before Мои Инвестиции there was one service: VTB, kept at the top level
+        data["services"] = {"vtb": {key: data.pop(key) for key in SERVICE_KEYS if key in data}}
     state.update(data)
-    if not isinstance(state["sources"], dict):
-        state["sources"] = {}
-    incident = state["incident"]
-    if not (isinstance(incident, dict) and "started_at" in incident
-            and isinstance(incident.get("sources"), list)):
-        state["incident"] = None
+    if not isinstance(state["services"], dict):
+        state["services"] = {}
+    for service_id in list(state["services"]):
+        service(state, service_id)
     return state
 
 
-def _source(state, name):
+def service(state, service_id):
+    """The service's entry, created or repaired as needed."""
+    existing = state["services"].get(service_id)
+    svc = {**new_service_state(), **(existing if isinstance(existing, dict) else {})}
+    if not isinstance(svc["sources"], dict):
+        svc["sources"] = {}
+    incident = svc["incident"]
+    if not (isinstance(incident, dict) and "started_at" in incident
+            and isinstance(incident.get("sources"), list)):
+        svc["incident"] = None
+    state["services"][service_id] = svc
+    return svc
+
+
+def _source(svc, name):
     """The source's entry with any missing keys filled from SOURCE_DEFAULTS."""
-    existing = state["sources"].get(name)
+    existing = svc["sources"].get(name)
     source = {**SOURCE_DEFAULTS, **(existing if isinstance(existing, dict) else {})}
-    state["sources"][name] = source
+    svc["sources"][name] = source
     return source
 
 
@@ -57,8 +80,8 @@ def save_state(path, state):
     Path(path).write_text(text, encoding="utf-8")
 
 
-def _update_source(state, result, messages, incident_open):
-    source = _source(state, result.source)
+def _update_source(svc, service_id, result, messages, incident_open):
+    source = _source(svc, result.source)
     source["last"] = result.status
     if result.status == DISABLED:
         source.update(outage_streak=0, confirmed=OK)
@@ -69,12 +92,12 @@ def _update_source(state, result, messages, incident_open):
         source["outage_streak"] = 0
         if source["error_streak"] >= ERROR_ALERT_RUNS and not source["error_reported"]:
             source["error_reported"] = True
-            messages.append(notifier.source_down(result))
+            messages.append(notifier.source_down(service_id, result))
         if source["error_reported"]:
             source["confirmed"] = OK  # silent too long: its old OUTAGE no longer counts
         return  # otherwise keep the latest non-error status while the source blips
     if source["error_reported"]:
-        messages.append(notifier.source_back(result))
+        messages.append(notifier.source_back(service_id, result))
     source.update(error_streak=0, error_reported=False)
     if result.status == OUTAGE:
         source.update(details=result.details, url=result.url)
@@ -92,36 +115,39 @@ def _counts(source):
             and not source.get("error_reported"))
 
 
-def _incomplete(state):
+def _incomplete(svc, detectors):
     # DISABLED (no token) is a deliberate setup, not missing data
-    return any(state["sources"].get(name, {}).get("last") == ERROR for name in DETECTORS)
+    return any(svc["sources"].get(name, {}).get("last") == ERROR for name in detectors)
 
 
-def process(state, results, now):
+def process(state, service_id, results, now):
+    svc = service(state, service_id)
+    detectors = SERVICES[service_id].detectors
     messages = []
-    incident_open = state["incident"] is not None
+    incident_open = svc["incident"] is not None
     for result in results:
-        _update_source(state, result, messages, incident_open)
+        _update_source(svc, service_id, result, messages, incident_open)
 
-    in_outage = [name for name in DETECTORS if _counts(state["sources"].get(name, {}))]
-    incident = state["incident"]
+    in_outage = [name for name in detectors if _counts(svc["sources"].get(name, {}))]
+    incident = svc["incident"]
     if incident is None:
         if in_outage:
-            state["incident"] = {"started_at": now.isoformat(), "sources": in_outage}
-            state["recovery_streak"] = 0
-            messages.append(notifier.incident_started(state, in_outage, now))
+            svc["incident"] = {"started_at": now.isoformat(), "sources": in_outage}
+            svc["recovery_streak"] = 0
+            messages.append(notifier.incident_started(svc, service_id, in_outage, now))
     elif in_outage:
-        state["recovery_streak"] = 0
+        svc["recovery_streak"] = 0
         for name in in_outage:
             if name not in incident["sources"]:
                 incident["sources"].append(name)
-                messages.append(notifier.incident_confirmed(state, name, len(in_outage)))
+                messages.append(notifier.incident_confirmed(svc, service_id, name, len(in_outage)))
     else:
-        state["recovery_streak"] += 1
-        if state["recovery_streak"] >= RECOVERY_RUNS:
-            messages.append(notifier.incident_resolved(state, now, _incomplete(state)))
-            state["incident"] = None
-            state["recovery_streak"] = 0
+        svc["recovery_streak"] += 1
+        if svc["recovery_streak"] >= RECOVERY_RUNS:
+            messages.append(notifier.incident_resolved(svc, service_id, now,
+                                                       _incomplete(svc, detectors)))
+            svc["incident"] = None
+            svc["recovery_streak"] = 0
     return messages
 
 
