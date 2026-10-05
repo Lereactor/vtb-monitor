@@ -63,3 +63,10 @@ def test_no_colour_class_is_error():
 def test_empty_status_text_is_error():
     html = load("downreport_ok.html").replace("Массовых жалоб нет", "")
     assert downreport.parse(html).status == ERROR
+
+
+def test_invest_page():
+    html = (Path(__file__).parent / "fixtures" / "downreport_invest_ok.html").read_bytes()
+    result = downreport.parse(html, "vtb-investments")
+    assert result.status == OK
+    assert result.url == "https://downreport.ru/vtb-investments"

@@ -11,8 +11,9 @@ class Service:
 SERVICES = {
     "vtb": Service("ВТБ", {"detector404": "bank-vtb", "downreport": "vtb",
                            "downradar": "vtb.ru", "sboyrf": "bank-vtb"}),
-    # DownReport and СБОЙ.РФ have no page for the investment app
+    # СБОЙ.РФ has no page for the investment app
     "invest": Service("ВТБ Мои Инвестиции", {"detector404": "vtbinvesticii",
+                                             "downreport": "vtb-investments",
                                              "downradar": "broker.vtb.ru"}),
 }
 # the official channel's result is kept with this service

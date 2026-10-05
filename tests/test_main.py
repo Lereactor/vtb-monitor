@@ -128,4 +128,5 @@ def test_each_service_checks_its_pages(tmp_path, monkeypatch):
     main.run(tmp_path / "state.json", lambda messages: None, now=NOW, channel=False)
     assert calls == [("detector404", "bank-vtb"), ("downreport", "vtb"), ("downradar", "vtb.ru"),
                      ("sboyrf", "bank-vtb"), ("pause", 5), ("detector404", "vtbinvesticii"),
+                     ("pause", 5), ("downreport", "vtb-investments"),
                      ("pause", 5), ("downradar", "broker.vtb.ru")]
