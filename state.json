@@ -1,16 +1,20 @@
 {
-  "incident": null,
   "last_heartbeat": "2026-10-05",
-  "recovery_streak": 0,
-  "sources": {
-    "telegram": {
-      "confirmed": "OK",
-      "details": "",
-      "error_reported": false,
-      "error_streak": 0,
-      "last": "OK",
-      "outage_streak": 0,
-      "url": ""
+  "services": {
+    "vtb": {
+      "incident": null,
+      "recovery_streak": 0,
+      "sources": {
+        "telegram": {
+          "confirmed": "OK",
+          "details": "",
+          "error_reported": false,
+          "error_streak": 0,
+          "last": "OK",
+          "outage_streak": 0,
+          "url": ""
+        }
+      }
     }
   },
   "telegram_last_id": 3829
