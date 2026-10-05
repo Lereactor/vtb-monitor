@@ -12,7 +12,7 @@ NOW = datetime(2026, 10, 4, 6, 30, tzinfo=timezone.utc)  # 09:30 MSK
 
 @pytest.fixture
 def sources(monkeypatch):
-    results = {"detector404": OK, "downreport": OK, "downradar": OK}
+    results = {"detector404": OK, "downreport": OK, "downradar": OK, "sboyrf": OK}
     tg = {"posts": [], "last_id": 100}
     monkeypatch.setattr(main.detector404, "check",
                         lambda s: SourceResult("detector404", results["detector404"]))
@@ -20,6 +20,8 @@ def sources(monkeypatch):
                         lambda s: SourceResult("downreport", results["downreport"]))
     monkeypatch.setattr(main.downradar, "check",
                         lambda s: SourceResult("downradar", results["downradar"]))
+    monkeypatch.setattr(main.sboyrf, "check",
+                        lambda s: SourceResult("sboyrf", results["sboyrf"]))
     monkeypatch.setattr(main.telegram_channel, "check",
                         lambda last, s: (SourceResult("telegram", OK), tg["posts"], tg["last_id"]))
     return results, tg

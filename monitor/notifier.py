@@ -7,9 +7,9 @@ import requests
 from .sources.base import DISABLED, ERROR, OK, OUTAGE
 
 MSK = timezone(timedelta(hours=3))
-DETECTORS = ("detector404", "downreport", "downradar")
+DETECTORS = ("detector404", "downreport", "downradar", "sboyrf")
 TITLES = {"detector404": "DETECTOR404", "downreport": "DownReport",
-          "downradar": "DownRadar", "telegram": "Telegram ВТБ"}
+          "downradar": "DownRadar", "sboyrf": "СБОЙ.РФ", "telegram": "Telegram ВТБ"}
 ICONS = {OK: "🟢", OUTAGE: "🔴", ERROR: "⚙️", DISABLED: "⚪"}
 
 

@@ -14,7 +14,7 @@ import requests
 
 from . import notifier
 from . import state as st
-from .sources import detector404, downradar, downreport, telegram_channel
+from .sources import detector404, downradar, downreport, sboyrf, telegram_channel
 from .sources.base import ERROR, SourceResult
 
 
@@ -50,6 +50,7 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
             _safe_check(detector404.NAME, detector404.check, session),
             _safe_check(downreport.NAME, downreport.check, session),
             _safe_check(downradar.NAME, downradar.check, session),
+            _safe_check(sboyrf.NAME, sboyrf.check, session),
         ]
     if channel:
         tg_result, posts, last_id = _safe_telegram(state["telegram_last_id"], session)
