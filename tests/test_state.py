@@ -43,7 +43,8 @@ def test_second_source_confirms():
     run(state, R("detector404", OUTAGE), R("downreport", OUTAGE))
     messages = run(state, R("detector404", OUTAGE), R("downreport", OUTAGE), minute=5)
     assert len(messages) == 1
-    assert messages[0].startswith("➕ ВТБ: сбой подтверждает DownReport (2 из 2")
+    assert messages[0].startswith("🔴 ВТБ: сбой подтверждает ещё один сайт\nDownReport")
+    assert "Сбой видят сайтов: 2 из 2." in messages[0]
 
 
 def test_confirm_count_is_current_not_historical():
@@ -52,7 +53,7 @@ def test_confirm_count_is_current_not_historical():
     run(state, R("detector404", OUTAGE), R("downreport", OK), R("downradar", OUTAGE), minute=5)
     messages = run(state, R("detector404", OK), R("downreport", OUTAGE), R("downradar", OUTAGE),
                    minute=10)
-    assert messages == [m for m in messages if m.startswith("➕ ВТБ: сбой подтверждает DownReport (2 из 3")]
+    assert messages == [m for m in messages if "DownReport" in m and "сайтов: 2 из 3." in m]
     assert len(messages) == 1
 
 
@@ -61,7 +62,7 @@ def test_recovery_after_two_calm_runs():
     run(state, R("detector404", OUTAGE))
     assert run(state, R("detector404", OK), minute=5) == []
     messages = run(state, R("detector404", OK), minute=10)
-    assert messages[0].startswith("🟢") and "10 мин" in messages[0]
+    assert messages[0].startswith("✅") and "10 мин" in messages[0]
     assert V(state)["incident"] is None
 
 
@@ -74,14 +75,28 @@ def test_outage_returning_resets_recovery():
     assert V(state)["incident"] is not None
 
 
-def test_source_error_reported_once_after_three_runs():
+def test_broken_source_is_logged_not_sent(capsys):
+    # a monitoring site being down is not news for the chat: it goes to the log and the heartbeat
     state = st.new_state()
     assert run(state, R("downreport", ERROR, "HTTP 403")) == []
     assert run(state, R("downreport", ERROR, "HTTP 403")) == []
-    messages = run(state, R("downreport", ERROR, "HTTP 403"))
-    assert messages == ["⚙️ ВТБ · DownReport не отвечает (HTTP 403). Сигналы этого источника не учитываются."]
+    assert run(state, R("downreport", ERROR, "HTTP 403")) == []
+    assert capsys.readouterr().out == "ВТБ · DownReport не отвечает (HTTP 403)\n"
+    assert V(state)["sources"]["downreport"]["error_reported"]
     assert run(state, R("downreport", ERROR)) == []
-    assert run(state, R("downreport", OK)) == ["⚙️ ВТБ · DownReport снова работает"]
+    assert capsys.readouterr().out == ""
+    assert run(state, R("downreport", OK)) == []
+    assert capsys.readouterr().out == "ВТБ · DownReport снова отвечает\n"
+
+
+def test_broken_and_restored_source_is_an_event():
+    state = st.new_state()
+    events = []
+    for minute in (0, 5, 10, 15):
+        st.process(state, "vtb", [R("downreport", ERROR)], T0 + timedelta(minutes=minute), events)
+    assert events == [("vtb", "downreport", True)]
+    st.process(state, "vtb", [R("downreport", OK)], T0 + timedelta(minutes=20), events)
+    assert events == [("vtb", "downreport", True), ("vtb", "downreport", False)]
 
 
 def test_erroring_source_keeps_incident_open():
@@ -102,7 +117,7 @@ def test_flapping_crowd_source_keeps_one_incident():
     assert run(state, R("downradar", OK), minute=40) == []
     assert V(state)["incident"] is not None
     messages = run(state, R("downradar", OK), minute=45)
-    assert messages[0].startswith("🟢")
+    assert messages[0].startswith("✅")
     assert V(state)["incident"] is None
 
 
@@ -118,16 +133,15 @@ def test_outage_during_incident_survives_short_errors():
     assert V(state)["incident"] is not None
 
 
-def test_written_off_source_closes_incident_with_note():
+def test_written_off_source_closes_incident():
     state = st.new_state()
     run(state, R("detector404", OUTAGE))
     sent = []
     for i in range(1, 6):
         sent += run(state, R("detector404", ERROR, "HTTP 500"), minute=5 * i)
     assert V(state)["incident"] is None
-    resolved = [m for m in sent if m.startswith("🟢")]
+    resolved = [m for m in sent if m.startswith("✅")]
     assert len(resolved) == 1
-    assert "(часть источников не отвечает — данные неполные)" in resolved[0]
     assert V(state)["sources"]["detector404"]["confirmed"] == OK
 
 
@@ -136,27 +150,18 @@ def test_disabled_source_closes_incident():
     run(state, R("detector404", OUTAGE))
     run(state, R("detector404", DISABLED), minute=5)
     messages = run(state, R("detector404", DISABLED), minute=10)
-    assert messages[0].startswith("🟢")
+    assert messages[0].startswith("✅")
     assert V(state)["incident"] is None
     assert V(state)["sources"]["detector404"]["confirmed"] == OK
 
 
-def test_resolved_without_note_when_detector404_disabled():
+def test_resolved_when_detector404_disabled():
     state = st.new_state()
     run(state, R("detector404", DISABLED), R("downradar", OUTAGE))
     run(state, R("detector404", DISABLED), R("downradar", OUTAGE), minute=5)
     run(state, R("detector404", DISABLED), R("downradar", OK), minute=10)
     messages = run(state, R("detector404", DISABLED), R("downradar", OK), minute=15)
-    assert messages[0].startswith("🟢")
-    assert "данные неполные" not in messages[0]
-
-
-def test_resolved_without_note_when_all_sources_answer():
-    state = st.new_state()
-    run(state, R("detector404", OUTAGE))
-    run(state, R("detector404", OK), minute=5)
-    messages = run(state, R("detector404", OK), minute=10)
-    assert "данные неполные" not in messages[0]
+    assert messages[0].startswith("✅")
 
 
 def test_error_resets_crowd_outage_streak():
@@ -269,7 +274,7 @@ def test_old_single_service_state_moves_under_vtb(tmp_path):
 def test_services_have_separate_incidents():
     state = st.new_state()
     messages = st.process(state, "invest", [R("detector404", OUTAGE)], T0)
-    assert messages[0].startswith("🔴 ВТБ Мои Инвестиции: возможный сбой")
+    assert messages[0].startswith("🔴 ВТБ Мои Инвестиции: похоже на сбой")
     assert run(state, R("detector404", OK)) == []
     assert V(state)["incident"] is None
     assert state["services"]["invest"]["incident"] is not None
@@ -280,5 +285,5 @@ def test_invest_confirmation_counts_its_own_detectors():
     st.process(state, "invest", [R("detector404", OUTAGE), R("downradar", OUTAGE)], T0)
     messages = st.process(state, "invest", [R("detector404", OUTAGE), R("downradar", OUTAGE)],
                           T0 + timedelta(minutes=5))
-    assert messages == ["➕ ВТБ Мои Инвестиции: сбой подтверждает DownRadar (2 из 2 детекторов)\n"
-                        "• DownRadar: d\n  https://u"]
+    assert messages == ["🔴 ВТБ Мои Инвестиции: сбой подтверждает ещё один сайт\n"
+                        "DownRadar: d\nhttps://u\nСбой видят сайтов: 2 из 2."]

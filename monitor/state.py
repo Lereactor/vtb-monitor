@@ -1,4 +1,4 @@
-"""Turns source results plus previous state into messages. No I/O except load/save.
+"""Turns source results plus previous state into messages. No I/O except load/save and log lines.
 
 Each monitored service keeps its own sources and incident under state["services"].
 """
@@ -80,7 +80,7 @@ def save_state(path, state):
     Path(path).write_text(text, encoding="utf-8")
 
 
-def _update_source(svc, service_id, result, messages, incident_open):
+def _update_source(svc, service_id, result, incident_open, events):
     source = _source(svc, result.source)
     source["last"] = result.status
     if result.status == DISABLED:
@@ -92,12 +92,14 @@ def _update_source(svc, service_id, result, messages, incident_open):
         source["outage_streak"] = 0
         if source["error_streak"] >= ERROR_ALERT_RUNS and not source["error_reported"]:
             source["error_reported"] = True
-            messages.append(notifier.source_down(service_id, result))
+            print(notifier.source_down(service_id, result))
+            events.append((service_id, result.source, True))
         if source["error_reported"]:
             source["confirmed"] = OK  # silent too long: its old OUTAGE no longer counts
         return  # otherwise keep the latest non-error status while the source blips
     if source["error_reported"]:
-        messages.append(notifier.source_back(service_id, result))
+        print(notifier.source_back(service_id, result))
+        events.append((service_id, result.source, False))
     source.update(error_streak=0, error_reported=False)
     if result.status == OUTAGE:
         source.update(details=result.details, url=result.url)
@@ -115,18 +117,15 @@ def _counts(source):
             and not source.get("error_reported"))
 
 
-def _incomplete(svc, detectors):
-    # DISABLED (no token) is a deliberate setup, not missing data
-    return any(svc["sources"].get(name, {}).get("last") == ERROR for name in detectors)
-
-
-def process(state, service_id, results, now):
+def process(state, service_id, results, now, events=None):
+    """events collects (service_id, source, broke) for checks that stopped or resumed answering."""
+    events = [] if events is None else events
     svc = service(state, service_id)
     detectors = SERVICES[service_id].detectors
     messages = []
     incident_open = svc["incident"] is not None
     for result in results:
-        _update_source(svc, service_id, result, messages, incident_open)
+        _update_source(svc, service_id, result, incident_open, events)
 
     in_outage = [name for name in detectors if _counts(svc["sources"].get(name, {}))]
     incident = svc["incident"]
@@ -144,8 +143,7 @@ def process(state, service_id, results, now):
     else:
         svc["recovery_streak"] += 1
         if svc["recovery_streak"] >= RECOVERY_RUNS:
-            messages.append(notifier.incident_resolved(svc, service_id, now,
-                                                       _incomplete(svc, detectors)))
+            messages.append(notifier.incident_resolved(svc, service_id, now))
             svc["incident"] = None
             svc["recovery_streak"] = 0
     return messages

@@ -23,29 +23,37 @@ STATE = {
 
 
 def test_incident_started():
-    text = notifier.incident_started(STATE, "vtb", ["downradar"], NOW)
-    assert text.startswith("🔴 ВТБ: возможный сбой")
-    assert "Источник: DownRadar" in text
-    assert "жалоб за час: 87" in text
-    assert "14:50 МСК" in text
-    assert "🔴 DownRadar" in text and "🟢 DownReport" in text
+    assert notifier.incident_started(STATE, "vtb", ["downradar"], NOW) == (
+        "🔴 ВТБ: похоже на сбой (14:50 МСК)\n"
+        "DownRadar: есть проблемы, жалоб за час: 87\n"
+        "https://u\n"
+        "Сбой видят сайтов: 1 из 2.\n"
+        "Пока только один сайт — возможна ложная тревога.")
 
 
-def test_incident_confirmed_counts_enabled_detectors():
-    text = notifier.incident_confirmed(STATE, "vtb", "downradar", 1)
-    assert text.startswith("➕ ВТБ: сбой подтверждает DownRadar (1 из 2 детекторов)")
+def test_incident_confirmed():
+    assert notifier.incident_confirmed(STATE, "vtb", "downradar", 1) == (
+        "🔴 ВТБ: сбой подтверждает ещё один сайт\n"
+        "DownRadar: есть проблемы, жалоб за час: 87\n"
+        "https://u\n"
+        "Сбой видят сайтов: 1 из 2.")
 
 
-def test_incident_resolved_duration():
-    text = notifier.incident_resolved(STATE, "vtb", NOW)
-    assert "47 мин" in text and "14:03" in text and "14:50" in text
+def test_tally_leaves_out_broken_sites():
+    svc = {**STATE, "sources": {**STATE["sources"],
+                                "downreport": {**src(ERROR), "error_reported": True}}}
+    assert "сайтов: 1 из 1." in notifier.incident_confirmed(svc, "vtb", "downradar", 1)
 
 
-def test_source_messages():
+def test_incident_resolved():
+    assert notifier.incident_resolved(STATE, "vtb", NOW) == (
+        "✅ ВТБ: всё в норме\nСбой длился 47 мин (14:03–14:50 МСК).")
+
+
+def test_source_log_lines():
     result = SourceResult("downreport", ERROR, "HTTP 403")
-    assert notifier.source_down("vtb", result) == ("⚙️ ВТБ · DownReport не отвечает (HTTP 403). "
-                                                   "Сигналы этого источника не учитываются.")
-    assert notifier.source_back("invest", result) == "⚙️ ВТБ Мои Инвестиции · DownReport снова работает"
+    assert notifier.source_down("vtb", result) == "ВТБ · DownReport не отвечает (HTTP 403)"
+    assert notifier.source_back("invest", result) == "ВТБ Мои Инвестиции · DownReport снова отвечает"
 
 
 def test_official_post():
@@ -62,19 +70,60 @@ def test_official_post_about_investments_is_tagged():
 
 def test_incident_titles_name_the_service():
     assert notifier.incident_started(STATE, "invest", ["downradar"], NOW).startswith(
-        "🔴 ВТБ Мои Инвестиции: возможный сбой")
+        "🔴 ВТБ Мои Инвестиции: похоже на сбой")
     assert notifier.incident_resolved(STATE, "invest", NOW).startswith(
-        "🟢 ВТБ Мои Инвестиции: сбой завершён")
+        "✅ ВТБ Мои Инвестиции: всё в норме")
 
 
-def test_heartbeat_lists_each_service():
-    state = {"services": {"vtb": STATE,
-                          "invest": {"sources": {"detector404": src(OK), "downradar": src(ERROR)},
-                                     "incident": None}}}
+BROKEN = {**src(ERROR), "error_reported": True}
+# a one-off error (detector404 here) is still ✅: only checks written off after several failures are ❌
+TWO_SERVICES = {"services": {
+    "invest": {"sources": {"detector404": src(ERROR), "downradar": BROKEN}, "incident": None},
+    "vtb": {"sources": {"downradar": BROKEN, "sboyrf": src(OK), "detector404": src(OK)},
+            "incident": None},
+}}
+
+
+def test_heartbeat_when_all_is_well():
+    state = {"services": {"vtb": {"sources": {"downradar": src(OK)}, "incident": None}}}
     assert notifier.heartbeat(state) == (
-        "💓 Оповещатель ВТБ работает\n\n"
-        "ВТБ:\n🟢 DownReport\n🔴 DownRadar\n🟢 Telegram ВТБ\n\n"
-        "ВТБ Мои Инвестиции:\n🟢 DETECTOR404\n⚙️ DownRadar")
+        "☀️ Оповещатель ВТБ работает, проверяет каждые 5 минут.\n\n"
+        "Проверки:\nВТБ: ✅ DownRadar\n\n"
+        "Сбоев сейчас нет.")
+
+
+def test_heartbeat_names_open_incidents():
+    state = {"services": {"vtb": STATE}}
+    assert notifier.heartbeat(state) == (
+        "☀️ Оповещатель ВТБ работает, проверяет каждые 5 минут.\n\n"
+        "Проверки:\nВТБ: ✅ DownReport, ✅ DownRadar, ✅ Telegram ВТБ\n\n"
+        "Сейчас идёт сбой: ВТБ (с 14:03 МСК).")
+
+
+def test_sources_changed_shows_every_check():
+    events = [("vtb", "downradar", True), ("invest", "downradar", True)]
+    assert notifier.sources_changed(TWO_SERVICES, events) == (
+        "⚠️ Перестал отвечать DownRadar (ВТБ, ВТБ Мои Инвестиции).\n"
+        "Это сайт со статистикой жалоб, а не сам банк. Следим по остальным.\n\n"
+        "Проверки:\n"
+        "ВТБ: ✅ DETECTOR404, ❌ DownRadar, ✅ СБОЙ.РФ\n"
+        "ВТБ Мои Инвестиции: ✅ DETECTOR404, ❌ DownRadar\n\n"
+        "Сбоев сейчас нет.")
+
+
+def test_sources_changed_on_recovery():
+    state = {"services": {"vtb": {"sources": {"downradar": src(OK), "sboyrf": src(OK)},
+                                  "incident": None}}}
+    assert notifier.sources_changed(state, [("vtb", "downradar", False)]) == (
+        "✅ Снова отвечает DownRadar (ВТБ).\n\n"
+        "Проверки:\nВТБ: ✅ DownRadar, ✅ СБОЙ.РФ\n\n"
+        "Сбоев сейчас нет.")
+
+
+def test_sources_changed_for_the_channel():
+    state = {"services": {"vtb": {"sources": {"telegram": BROKEN}, "incident": None}}}
+    assert notifier.sources_changed(state, [("vtb", "telegram", True)]).startswith(
+        "⚠️ Перестал отвечать Telegram ВТБ (ВТБ).\nПока не видим новых официальных постов ВТБ.\n")
 
 
 def test_send_posts_to_bot_api():

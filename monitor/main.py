@@ -70,9 +70,12 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
         state["telegram_last_id"] = last_id
 
     messages = [notifier.official_post(post) for post in posts]
+    events = []
     for service_id, service_results in results.items():
         if service_results:
-            messages += st.process(state, service_id, service_results, now)
+            messages += st.process(state, service_id, service_results, now, events)
+    if events:
+        messages.append(notifier.sources_changed(state, events))
     if st.heartbeat_due(state, now):
         messages.append(notifier.heartbeat(state))
         state["last_heartbeat"] = now.astimezone(st.MSK).date().isoformat()
