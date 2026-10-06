@@ -50,7 +50,7 @@ def test_broken_site_on_both_services_is_one_message(tmp_path, sources):
     main.run(path, lambda messages: None, now=NOW)
     results[("downradar", "vtb.ru")] = results[("downradar", "broker.vtb.ru")] = ERROR
     sent = []
-    for _ in range(3):
+    for _ in range(st.ERROR_ALERT_RUNS):
         main.run(path, sent.extend, now=NOW)
     assert len(sent) == 1
     assert sent[0].startswith("⚠️ Перестал отвечать DownRadar (ВТБ, ВТБ Мои Инвестиции).")

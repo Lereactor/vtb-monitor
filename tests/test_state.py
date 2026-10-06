@@ -78,8 +78,10 @@ def test_outage_returning_resets_recovery():
 def test_broken_source_is_logged_not_sent(capsys):
     # a monitoring site being down is not news for the chat: it goes to the log and the heartbeat
     state = st.new_state()
-    assert run(state, R("downreport", ERROR, "HTTP 403")) == []
-    assert run(state, R("downreport", ERROR, "HTTP 403")) == []
+    for _ in range(st.ERROR_ALERT_RUNS - 1):
+        assert run(state, R("downreport", ERROR, "HTTP 403")) == []
+    assert capsys.readouterr().out == ""
+    assert not V(state)["sources"]["downreport"]["error_reported"]
     assert run(state, R("downreport", ERROR, "HTTP 403")) == []
     assert capsys.readouterr().out == "ВТБ · DownReport не отвечает (HTTP 403)\n"
     assert V(state)["sources"]["downreport"]["error_reported"]
@@ -92,10 +94,10 @@ def test_broken_source_is_logged_not_sent(capsys):
 def test_broken_and_restored_source_is_an_event():
     state = st.new_state()
     events = []
-    for minute in (0, 5, 10, 15):
-        st.process(state, "vtb", [R("downreport", ERROR)], T0 + timedelta(minutes=minute), events)
+    for i in range(st.ERROR_ALERT_RUNS + 1):
+        st.process(state, "vtb", [R("downreport", ERROR)], T0 + timedelta(minutes=5 * i), events)
     assert events == [("vtb", "downreport", True)]
-    st.process(state, "vtb", [R("downreport", OK)], T0 + timedelta(minutes=20), events)
+    st.process(state, "vtb", [R("downreport", OK)], T0 + timedelta(hours=1), events)
     assert events == [("vtb", "downreport", True), ("vtb", "downreport", False)]
 
 
@@ -137,7 +139,7 @@ def test_written_off_source_closes_incident():
     state = st.new_state()
     run(state, R("detector404", OUTAGE))
     sent = []
-    for i in range(1, 6):
+    for i in range(1, st.ERROR_ALERT_RUNS + 3):
         sent += run(state, R("detector404", ERROR, "HTTP 500"), minute=5 * i)
     assert V(state)["incident"] is None
     resolved = [m for m in sent if m.startswith("✅")]
@@ -250,10 +252,11 @@ def test_outage_details_are_kept():
 
 def test_persistent_error_stops_changing_state(tmp_path):
     state = st.new_state()
-    for minute in range(0, 25, 5):
-        run(state, R("downradar", ERROR, "HTTP 403"), minute=minute)
+    runs = st.ERROR_ALERT_RUNS + 2
+    for i in range(runs):
+        run(state, R("downradar", ERROR, "HTTP 403"), minute=5 * i)
     st.save_state(tmp_path / "a.json", state)
-    run(state, R("downradar", ERROR, "HTTP 403"), minute=30)
+    run(state, R("downradar", ERROR, "HTTP 403"), minute=5 * runs)
     st.save_state(tmp_path / "b.json", state)
     assert (tmp_path / "a.json").read_text(encoding="utf-8") == (tmp_path / "b.json").read_text(encoding="utf-8")
 

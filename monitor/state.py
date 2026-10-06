@@ -11,7 +11,7 @@ from .services import SERVICES
 from .sources.base import DISABLED, ERROR, OK, OUTAGE
 
 CROWD_CONFIRM_RUNS = 2
-ERROR_ALERT_RUNS = 3
+ERROR_ALERT_RUNS = 6  # 30 min: DownRadar times out for 5-15 min several times a day
 RECOVERY_RUNS = 2
 IMMEDIATE = {"detector404"}
 HEARTBEAT_HOUR_MSK = 9
