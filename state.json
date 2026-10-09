@@ -9,8 +9,8 @@
           "confirmed": "OK",
           "details": "",
           "error_reported": false,
-          "error_streak": 0,
-          "last": "OK",
+          "error_streak": 1,
+          "last": "SOURCE_ERROR",
           "outage_streak": 0,
           "url": ""
         }
