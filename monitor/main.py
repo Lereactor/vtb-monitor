@@ -10,10 +10,11 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 
-from . import history, notifier
+from . import history, notifier, posts as official_posts
 from . import state as st
 from .services import CHANNEL_SERVICE, SERVICES
 from .sources import detector404, downradar, downreport, sboyrf, telegram_channel
@@ -88,6 +89,8 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     if messages:
         deliver(messages)
     st.save_state(state_path, state)
+    if posts:  # for the site's history on the VPS, which cannot reach Telegram
+        official_posts.append(Path(state_path).with_name("posts.json"), posts, now)
     if history_path:
         sent = [st.Event("message_sent", "", "", message) for message in messages]
         checked = {service_id: rs for service_id, rs in results.items() if rs}
@@ -102,6 +105,9 @@ def _after_run(history_path, now, results, events):
         try:
             history.record_run(db, now, results, events)
             history.roll_up(db, now)
+            token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPO")
+            if token and repo:
+                official_posts.import_from_github(db, token, repo)
         finally:
             db.close()
     except Exception as exc:  # noqa: BLE001

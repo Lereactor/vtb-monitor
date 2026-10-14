@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -177,3 +178,23 @@ def test_history_failure_does_not_block_alerts(tmp_path, sources, monkeypatch, c
 def test_no_history_without_path(tmp_path, sources):
     main.run(tmp_path / "state.json", lambda messages: None, now=NOW)
     assert list(tmp_path.iterdir()) == [tmp_path / "state.json"]
+
+
+def test_channel_run_saves_posts_next_to_state(tmp_path, sources):
+    results, tg = sources
+    path = tmp_path / "state.json"
+    main.run(path, lambda messages: None, now=NOW)
+    tg["posts"] = [Post(101, "Наблюдаются затруднения", "outage")]
+    main.run(path, lambda messages: None, now=NOW)
+    saved = json.loads((tmp_path / "posts.json").read_text(encoding="utf-8"))
+    assert [p["id"] for p in saved] == [101]
+
+
+def test_history_imports_posts_when_github_is_configured(tmp_path, sources, monkeypatch):
+    calls = []
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    monkeypatch.setenv("GITHUB_REPO", "me/repo")
+    monkeypatch.setattr(main.official_posts, "import_from_github", lambda db, token, repo: calls.append((token, repo)))
+    main.run(tmp_path / "state.json", lambda messages: None, now=NOW, channel=False,
+             history_path=tmp_path / "h.db")
+    assert calls == [("tok", "me/repo")]
