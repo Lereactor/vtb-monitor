@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from . import notifier
+from . import history, notifier
 from . import state as st
 from .services import CHANNEL_SERVICE, SERVICES
 from .sources import detector404, downradar, downreport, sboyrf, telegram_channel
@@ -45,8 +45,12 @@ def _safe_telegram(last_id, session):
         return _crash_result(telegram_channel.NAME, exc), [], last_id
 
 
-def run(state_path, deliver, now=None, session=None, detectors=True, channel=True):
-    """deliver(messages) must raise on failure: then state is not saved and the run is retried."""
+def run(state_path, deliver, now=None, session=None, detectors=True, channel=True,
+        history_path=None):
+    """deliver(messages) must raise on failure: then state is not saved and the run is retried.
+
+    history_path: also record every check and event there (the VPS run).
+    """
     session = session or requests.Session()
     now = now or datetime.now(timezone.utc)
     state = st.load_state(state_path)
@@ -84,7 +88,24 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     if messages:
         deliver(messages)
     st.save_state(state_path, state)
+    if history_path:
+        sent = [st.Event("message_sent", "", "", message) for message in messages]
+        checked = {service_id: rs for service_id, rs in results.items() if rs}
+        _after_run(history_path, now, checked, events + sent)
     return messages
+
+
+def _after_run(history_path, now, results, events):
+    """History and the site are extras: never let them break alerting."""
+    try:
+        db = history.connect(history_path)
+        try:
+            history.record_run(db, now, results, events)
+            history.roll_up(db, now)
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"history: {exc.__class__.__name__}: {exc}")
 
 
 def _deliverer(via):
@@ -110,13 +131,15 @@ def main():
     parser.add_argument("--via", choices=("telegram", "github", "print"), default="telegram",
                         help="send directly, relay through the GitHub notify workflow, or print")
     parser.add_argument("--dry-run", action="store_true", help="same as --via print")
+    parser.add_argument("--history", help="SQLite file to record every check and event in")
     args = parser.parse_args()
 
     deliver = _deliverer("print" if args.dry_run else args.via)
     if os.environ.get("TEST_MESSAGE") == "true":
         deliver(["✅ Тестовое сообщение: оповещатель ВТБ подключён"])
     run(args.state, deliver,
-        detectors=args.only in (None, "detectors"), channel=args.only in (None, "channel"))
+        detectors=args.only in (None, "detectors"), channel=args.only in (None, "channel"),
+        history_path=args.history)
 
 
 if __name__ == "__main__":

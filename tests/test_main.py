@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from monitor import main
+from monitor import history, main
 from monitor import state as st
 from monitor.sources.base import ERROR, OK, OUTAGE, SourceResult
 from monitor.sources.telegram_channel import Post
@@ -142,3 +142,38 @@ def test_each_service_checks_its_pages(tmp_path, monkeypatch):
                      ("sboyrf", "bank-vtb"), ("pause", 5), ("detector404", "vtbinvesticii"),
                      ("pause", 5), ("downreport", "vtb-investments"),
                      ("pause", 5), ("downradar", "broker.vtb.ru")]
+
+
+def test_history_is_recorded(tmp_path, sources):
+    main.run(tmp_path / "state.json", lambda messages: None, now=NOW, channel=False,
+             history_path=tmp_path / "h.db")
+    db = history.connect(tmp_path / "h.db")
+    assert db.execute("SELECT count(*) FROM checks").fetchone() == (7,)  # 4 ВТБ + 3 Инвестиции
+    assert db.execute("SELECT kind FROM events").fetchall() == [("message_sent",)]  # the heartbeat
+
+
+def test_history_records_incident_events(tmp_path, sources):
+    results, tg = sources
+    path = tmp_path / "state.json"
+    main.run(path, lambda messages: None, now=NOW, history_path=tmp_path / "h.db")
+    results[("detector404", "bank-vtb")] = OUTAGE
+    main.run(path, lambda messages: None, now=NOW, history_path=tmp_path / "h.db")
+    kinds = history.connect(tmp_path / "h.db").execute("SELECT kind FROM events").fetchall()
+    assert ("incident_started",) in kinds
+
+
+def test_history_failure_does_not_block_alerts(tmp_path, sources, monkeypatch, capsys):
+    def broken(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(main.history, "record_run", broken)
+    sent = []
+    main.run(tmp_path / "state.json", sent.extend, now=NOW, history_path=tmp_path / "h.db")
+    assert sent
+    assert "history: OSError: disk full" in capsys.readouterr().out
+    assert (tmp_path / "state.json").exists()
+
+
+def test_no_history_without_path(tmp_path, sources):
+    main.run(tmp_path / "state.json", lambda messages: None, now=NOW)
+    assert list(tmp_path.iterdir()) == [tmp_path / "state.json"]
