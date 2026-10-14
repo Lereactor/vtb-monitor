@@ -1,0 +1,22 @@
+2026-10-10T11:20:03+07:00 176047.ip-ptr.tech systemd[1]: Starting vtb-monitor.service - VTB outage detectors check (relays alerts via GitHub)...
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [vtb/detector404] OUTAGE сенсоры: недоступен в 1 городах
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [vtb/downreport] OK Массовых жалоб нет
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [vtb/downradar] OK нет проблем, жалоб за час: 0
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [vtb/sboyrf] OK жалоб за час: 1, за сегодня: 126
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [invest/detector404] OK сенсоры и жалобы в норме
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [invest/downreport] OK Жалобы на сбои в работе
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech python3[171433]: [invest/downradar] OK нет проблем, жалоб за час: 0
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech systemd[1]: vtb-monitor.service: Deactivated successfully.
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech systemd[1]: Finished vtb-monitor.service - VTB outage detectors check (relays alerts via GitHub).
+2026-10-10T11:20:43+07:00 176047.ip-ptr.tech systemd[1]: vtb-monitor.service: Consumed 2.175s CPU time.
+2026-10-10T11:25:01+07:00 176047.ip-ptr.tech systemd[1]: Starting vtb-monitor.service - VTB outage detectors check (relays alerts via GitHub)...
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [vtb/detector404] OUTAGE сенсоры: недоступен в 1 городах
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [vtb/downreport] OK Массовых жалоб нет
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [vtb/downradar] OK нет проблем, жалоб за час: 0
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [vtb/sboyrf] OK жалоб за час: 1, за сегодня: 131
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [invest/detector404] OK сенсоры и жалобы в норме
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [invest/downreport] OK Жалобы на сбои в работе
+2026-10-10T11:25:38+07:00 176047.ip-ptr.tech python3[171458]: [invest/downradar] OK нет проблем, жалоб за час: 0
+2026-10-10T11:25:39+07:00 176047.ip-ptr.tech systemd[1]: vtb-monitor.service: Deactivated successfully.
+2026-10-10T11:25:39+07:00 176047.ip-ptr.tech systemd[1]: Finished vtb-monitor.service - VTB outage detectors check (relays alerts via GitHub).
+2026-10-10T11:25:39+07:00 176047.ip-ptr.tech systemd[1]: vtb-monitor.service: Consumed 1.976s CPU time.
