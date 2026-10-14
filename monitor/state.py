@@ -3,6 +3,7 @@
 Each monitored service keeps its own sources and incident under state["services"].
 """
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import notifier
@@ -18,6 +19,19 @@ HEARTBEAT_HOUR_MSK = 9
 SOURCE_DEFAULTS = {"last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
                    "error_reported": False, "details": "", "url": ""}
 SERVICE_KEYS = ("sources", "incident", "recovery_streak")
+
+
+@dataclass(frozen=True)
+class Event:
+    """Something that happened in a run: kept in the history and used for messages.
+
+    kind: incident_started | incident_confirmed | incident_resolved |
+          source_down | source_back | message_sent
+    """
+    kind: str
+    service: str
+    source: str = ""
+    text: str = ""
 
 
 def new_state():
@@ -93,13 +107,13 @@ def _update_source(svc, service_id, result, incident_open, events):
         if source["error_streak"] >= ERROR_ALERT_RUNS and not source["error_reported"]:
             source["error_reported"] = True
             print(notifier.source_down(service_id, result))
-            events.append((service_id, result.source, True))
+            events.append(Event("source_down", service_id, result.source, result.details))
         if source["error_reported"]:
             source["confirmed"] = OK  # silent too long: its old OUTAGE no longer counts
         return  # otherwise keep the latest non-error status while the source blips
     if source["error_reported"]:
         print(notifier.source_back(service_id, result))
-        events.append((service_id, result.source, False))
+        events.append(Event("source_back", service_id, result.source))
     source.update(error_streak=0, error_reported=False)
     if result.status == OUTAGE:
         source.update(details=result.details, url=result.url)
@@ -118,7 +132,7 @@ def _counts(source):
 
 
 def process(state, service_id, results, now, events=None):
-    """events collects (service_id, source, broke) for checks that stopped or resumed answering."""
+    """Returns the messages; events collects an Event for everything that happened."""
     events = [] if events is None else events
     svc = service(state, service_id)
     detectors = SERVICES[service_id].detectors
@@ -133,17 +147,23 @@ def process(state, service_id, results, now, events=None):
         if in_outage:
             svc["incident"] = {"started_at": now.isoformat(), "sources": in_outage}
             svc["recovery_streak"] = 0
-            messages.append(notifier.incident_started(svc, service_id, in_outage, now))
+            text = notifier.incident_started(svc, service_id, in_outage, now)
+            messages.append(text)
+            events.append(Event("incident_started", service_id, ",".join(in_outage), text))
     elif in_outage:
         svc["recovery_streak"] = 0
         for name in in_outage:
             if name not in incident["sources"]:
                 incident["sources"].append(name)
-                messages.append(notifier.incident_confirmed(svc, service_id, name, len(in_outage)))
+                text = notifier.incident_confirmed(svc, service_id, name, len(in_outage))
+                messages.append(text)
+                events.append(Event("incident_confirmed", service_id, name, text))
     else:
         svc["recovery_streak"] += 1
         if svc["recovery_streak"] >= RECOVERY_RUNS:
-            messages.append(notifier.incident_resolved(svc, service_id, now))
+            text = notifier.incident_resolved(svc, service_id, now)
+            messages.append(text)
+            events.append(Event("incident_resolved", service_id, "", text))
             svc["incident"] = None
             svc["recovery_streak"] = 0
     return messages

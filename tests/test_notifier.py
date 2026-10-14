@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from monitor import notifier
+from monitor.state import Event
 from monitor.sources.base import ERROR, OK, OUTAGE, SourceResult
 from monitor.sources.telegram_channel import Post
 from tests.fakes import FakeResp, FakeSession
@@ -101,7 +102,7 @@ def test_heartbeat_names_open_incidents():
 
 
 def test_sources_changed_shows_every_check():
-    events = [("vtb", "downradar", True), ("invest", "downradar", True)]
+    events = [Event("source_down", "vtb", "downradar"), Event("source_down", "invest", "downradar")]
     assert notifier.sources_changed(TWO_SERVICES, events) == (
         "⚠️ Перестал отвечать DownRadar (ВТБ, ВТБ Мои Инвестиции).\n"
         "Это сайт со статистикой жалоб, а не сам банк. Следим по остальным.\n\n"
@@ -114,7 +115,7 @@ def test_sources_changed_shows_every_check():
 def test_sources_changed_on_recovery():
     state = {"services": {"vtb": {"sources": {"downradar": src(OK), "sboyrf": src(OK)},
                                   "incident": None}}}
-    assert notifier.sources_changed(state, [("vtb", "downradar", False)]) == (
+    assert notifier.sources_changed(state, [Event("source_back", "vtb", "downradar")]) == (
         "✅ Снова отвечает DownRadar (ВТБ).\n\n"
         "Проверки:\nВТБ: ✅ DownRadar, ✅ СБОЙ.РФ\n\n"
         "Сбоев сейчас нет.")
@@ -122,7 +123,7 @@ def test_sources_changed_on_recovery():
 
 def test_sources_changed_for_the_channel():
     state = {"services": {"vtb": {"sources": {"telegram": BROKEN}, "incident": None}}}
-    assert notifier.sources_changed(state, [("vtb", "telegram", True)]).startswith(
+    assert notifier.sources_changed(state, [Event("source_down", "vtb", "telegram")]).startswith(
         "⚠️ Перестал отвечать Telegram ВТБ (ВТБ).\nПока не видим новых официальных постов ВТБ.\n")
 
 

@@ -95,10 +95,26 @@ def test_broken_and_restored_source_is_an_event():
     state = st.new_state()
     events = []
     for i in range(st.ERROR_ALERT_RUNS + 1):
-        st.process(state, "vtb", [R("downreport", ERROR)], T0 + timedelta(minutes=5 * i), events)
-    assert events == [("vtb", "downreport", True)]
+        st.process(state, "vtb", [R("downreport", ERROR, "HTTP 403")], T0 + timedelta(minutes=5 * i), events)
+    assert events == [st.Event("source_down", "vtb", "downreport", "HTTP 403")]
     st.process(state, "vtb", [R("downreport", OK)], T0 + timedelta(hours=1), events)
-    assert events == [("vtb", "downreport", True), ("vtb", "downreport", False)]
+    assert events[-1] == st.Event("source_back", "vtb", "downreport")
+
+
+def test_incident_lifecycle_events():
+    state = st.new_state()
+    events = []
+    both = [R("detector404", OUTAGE), R("downreport", OUTAGE)]
+    st.process(state, "vtb", both, T0, events)
+    st.process(state, "vtb", both, T0 + timedelta(minutes=5), events)
+    for minute in (10, 15):
+        st.process(state, "vtb", [R("detector404", OK), R("downreport", OK)],
+                   T0 + timedelta(minutes=minute), events)
+    assert [(e.kind, e.source) for e in events] == [
+        ("incident_started", "detector404"), ("incident_confirmed", "downreport"),
+        ("incident_resolved", "")]
+    assert events[0].text.startswith("🔴 ВТБ: похоже на сбой")
+    assert events[2].text.startswith("✅ ВТБ: всё в норме")
 
 
 def test_erroring_source_keeps_incident_open():

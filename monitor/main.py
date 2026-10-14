@@ -74,8 +74,9 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     for service_id, service_results in results.items():
         if service_results:
             messages += st.process(state, service_id, service_results, now, events)
-    if events:
-        messages.append(notifier.sources_changed(state, events))
+    source_events = [e for e in events if e.kind in ("source_down", "source_back")]
+    if source_events:
+        messages.append(notifier.sources_changed(state, source_events))
     if st.heartbeat_due(state, now):
         messages.append(notifier.heartbeat(state))
         state["last_heartbeat"] = now.astimezone(st.MSK).date().isoformat()

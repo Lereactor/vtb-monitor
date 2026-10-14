@@ -94,10 +94,10 @@ def _outage_line(state):
 
 
 def sources_changed(state, events):
-    """events: (service_id, source name, broke) for checks that stopped or resumed answering."""
+    """events: source_down / source_back Events for checks that stopped or resumed answering."""
     grouped = {}
-    for service_id, name, broke in events:
-        grouped.setdefault((broke, name), []).append(_title(service_id))
+    for event in events:
+        grouped.setdefault((event.kind == "source_down", event.source), []).append(_title(event.service))
     lines = [("⚠️ Перестал отвечать " if broke else "✅ Снова отвечает ")
              + f"{TITLES[name]} ({', '.join(services)})."
              for (broke, name), services in grouped.items()]
