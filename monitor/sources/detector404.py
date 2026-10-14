@@ -14,6 +14,8 @@ NAME = "detector404"
 PAGE = "bank-vtb"
 NETWORK = "Сервис недоступен по сети"
 COMPLAINTS = "Много жалоб пользователей"
+# one city of 34 is down almost every hour (257 runs in 5 days): background, not an outage
+MIN_CITIES = 2
 
 
 def _flags(html):
@@ -46,13 +48,16 @@ def parse(html, page=PAGE):
     if not isinstance(network.get("value"), bool) or not isinstance(complaints.get("value"), bool):
         return SourceResult(NAME, ERROR, "неожиданный формат флагов", url)
 
-    problems = []
+    problems, too_few = [], False
     if network["value"]:
         cities = (network.get("valueReference") or {}).get("value")
         problems.append(f"сенсоры: недоступен в {cities} городах" if cities
                         else "сенсоры: недоступен по сети")
+        too_few = str(cities).isdigit() and int(cities) < MIN_CITIES
     if complaints["value"]:
         problems.append("много жалоб пользователей")
+    elif too_few:
+        return SourceResult(NAME, OK, problems[0] + " (мало для тревоги)", url)
     if problems:
         return SourceResult(NAME, OUTAGE, "; ".join(problems), url)
     return SourceResult(NAME, OK, "сенсоры и жалобы в норме", url)
