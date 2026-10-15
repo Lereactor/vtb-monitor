@@ -14,7 +14,7 @@ from .sources.base import DISABLED, ERROR, OK, OUTAGE
 CROWD_CONFIRM_RUNS = 2
 ERROR_ALERT_RUNS = 6  # 30 min: DownRadar times out for 5-15 min several times a day
 RECOVERY_RUNS = 2
-IMMEDIATE = {"detector404"}
+IMMEDIATE = {"detector404", "sboyrf"}  # СБОЙ.РФ: 50+ complaints an hour is rare enough to trust at once
 HEARTBEAT_HOUR_MSK = 9
 SOURCE_DEFAULTS = {"last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
                    "error_reported": False, "details": "", "url": ""}

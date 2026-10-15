@@ -38,6 +38,12 @@ def test_detector404_is_immediate():
     assert messages[0].startswith("🔴")
 
 
+def test_sboyrf_is_immediate():
+    # its 50/hour threshold is rarely reached, so one check is enough
+    messages = run(st.new_state(), R("sboyrf", OUTAGE, "жалоб за час: 60"))
+    assert messages[0].startswith("🔴")
+
+
 def test_second_source_confirms():
     state = st.new_state()
     run(state, R("detector404", OUTAGE), R("downreport", OUTAGE))
