@@ -16,6 +16,9 @@ from monitor.sitecrypto import ITERATIONS, derive_key  # noqa: E402
 password = getpass.getpass("Пароль сайта (как у сайта агентов): ")
 if not password:
     sys.exit("Пустой пароль")
+if getpass.getpass("Ещё раз: ") != password:
+    sys.exit("Пароли не совпали")
+sys.stdout.reconfigure(newline="\n")  # Windows: no \r in the VPS env file
 salt = os.urandom(16)
 print(f"SITE_KEY={base64.b64encode(derive_key(password, salt)).decode()}")
 print(f"SITE_SALT={base64.b64encode(salt).decode()}")
