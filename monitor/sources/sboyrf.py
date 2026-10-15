@@ -21,8 +21,12 @@ DAY_CHART_RE = re.compile(r"getElementById\('myChart'\).*?var data = (\[[^\]]*\]
 TODAY_RE = re.compile(r"жалоб за сегодня:\s*<b>(\d+)")
 
 
+def _url(page):
+    return f"https://сбой.рф/{page}"
+
+
 def parse(html, page=PAGE):
-    url = f"https://сбой.рф/{page}"
+    url = _url(page)
     if isinstance(html, bytes):
         html = html.decode("utf-8", "replace")
     match = DAY_CHART_RE.search(html)
@@ -45,5 +49,5 @@ def check(session=requests, page=PAGE):
     try:
         resp = fetch(f"https://xn--90aqok.xn--p1ai/{page}?t={int(time.time())}", session=session)
     except FetchError as exc:
-        return SourceResult(NAME, ERROR, str(exc), f"https://сбой.рф/{page}")
+        return SourceResult(NAME, ERROR, str(exc), _url(page))
     return parse(resp.content, page)

@@ -4,7 +4,11 @@ from datetime import datetime, timedelta
 from . import analytics, history
 from .notifier import TITLES
 from .services import SERVICES
+from .sources import detector404, downradar, downreport, sboyrf
 from .sources.base import DISABLED, OK, OUTAGE
+
+# the page each tile links to: where its numbers come from
+PAGE_URL = {m.NAME: m._url for m in (detector404, downradar, downreport, sboyrf)}
 
 SPARK_HOURS = 24
 PRIVATE_ALL_HOURS = 48     # every check
@@ -56,7 +60,8 @@ def build(db, state, now):
     public = {
         "generated_at": history.iso(now),
         "services": {sid: {"title": s.title,
-                           "sources": [{"id": name, "title": TITLES[name]} for name in s.detectors]}
+                           "sources": [{"id": name, "title": TITLES[name], "url": PAGE_URL[name](page)}
+                                       for name, page in s.detectors.items()]}
                      for sid, s in SERVICES.items()},
         "now": {sid: _now_block(db, state, sid, now) for sid in SERVICES},
         "incidents": [_incident(i, now) for i in reversed(analytics.incidents(db, now))],

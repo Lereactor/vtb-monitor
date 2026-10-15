@@ -60,7 +60,7 @@ export interface Block {
 
 export interface PublicData {
   generated_at: string
-  services: Record<ServiceId, { title: string; sources: { id: string; title: string }[] }>
+  services: Record<ServiceId, { title: string; sources: { id: string; title: string; url?: string }[] }>
   now: Record<ServiceId, ServiceNow>
   incidents: Incident[]
   analytics: Record<string, Block> // "<period>|<service filter>"

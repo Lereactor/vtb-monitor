@@ -35,13 +35,16 @@ export default function Now({ data, services }: { data: PublicData; services: Se
         <section className="section" key={service}>
           <Banner data={data} service={service} />
           <div className="grid">
-            {data.services[service].sources.map(({ id }) => {
+            {data.services[service].sources.map(({ id, url }) => {
               const source = data.now[service].sources[id]
               const status = STATUS[source.status]
               return (
                 <div className="card" key={id}>
                   <div className="source__head">
-                    <span className="source__name">{TITLES[id] ?? id}</span>
+                    {url
+                      ? <a className="source__name" href={url} target="_blank" rel="noreferrer"
+                           title={`Открыть страницу ${TITLES[id] ?? id}`}>{TITLES[id] ?? id} ↗</a>
+                      : <span className="source__name">{TITLES[id] ?? id}</span>}
                     <span className="pill">{status.icon} {status.label}</span>
                   </div>
                   <div className="source__count">

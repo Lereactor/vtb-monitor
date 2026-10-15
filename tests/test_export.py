@@ -58,7 +58,9 @@ def test_incidents_newest_first_with_analytics(tmp_path):
     assert incident["minutes"] == 60 and incident["peak"] == 60
     assert "24h|vtb" in public["analytics"]
     assert public["generated_at"] == history.iso(NOW)
-    assert public["services"]["vtb"]["sources"][0] == {"id": "detector404", "title": "DETECTOR404"}
+    assert public["services"]["vtb"]["sources"][0] == {"id": "detector404", "title": "DETECTOR404",
+                                                        "url": "https://detector404.ru/bank-vtb"}
+    assert public["services"]["invest"]["sources"][2]["url"] == "https://downradar.ru/ne-rabotaet/broker.vtb.ru"
 
 
 def test_private_part(tmp_path):
