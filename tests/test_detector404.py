@@ -33,25 +33,16 @@ def test_ok_page():
     assert result.url == "https://detector404.ru/bank-vtb"
 
 
-def test_network_down_is_outage_with_city_count():
-    result = detector404.parse(with_flags(network=True, cities=7))
-    assert result.status == OUTAGE
-    assert "сенсоры: недоступен в 7 городах" in result.details
+def test_sensors_alone_are_not_an_outage():
+    # 2-3 cities flapped for 5-10 min 23 times in 5 days with no complaints anywhere
+    for cities in (1, 3, "7", None):
+        result = detector404.parse(with_flags(network=True, cities=cities))
+        assert result.status == OK
+    assert detector404.parse(with_flags(network=True, cities=3)).details == (
+        "сенсоры: недоступен в 3 городах (без жалоб — не тревога)")
 
 
-def test_one_city_down_is_background_noise():
-    # 1 of 34 cities fired 257 times in 5 days: normal background, not an outage
-    result = detector404.parse(with_flags(network=True, cities=1))
-    assert result.status == OK
-    assert result.details == "сенсоры: недоступен в 1 городах (мало для тревоги)"
-
-
-def test_two_cities_down_is_outage():
-    assert detector404.parse(with_flags(network=True, cities=2)).status == OUTAGE
-    assert detector404.parse(with_flags(network=True, cities="2")).status == OUTAGE
-
-
-def test_one_city_plus_complaints_is_outage():
+def test_sensors_plus_complaints_is_outage():
     result = detector404.parse(with_flags(network=True, cities=1, complaints=True))
     assert result.status == OUTAGE
     assert result.details == "сенсоры: недоступен в 1 городах; много жалоб пользователей"

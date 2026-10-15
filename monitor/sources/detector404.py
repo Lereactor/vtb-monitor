@@ -14,8 +14,10 @@ NAME = "detector404"
 PAGE = "bank-vtb"
 NETWORK = "Сервис недоступен по сети"
 COMPLAINTS = "Много жалоб пользователей"
-# one city of 34 is down almost every hour (257 runs in 5 days): background, not an outage
-MIN_CITIES = 2
+COMPLAINTS_TEXT = "много жалоб пользователей"
+# Sensors alone are not an alert: over 10-15.10 they reported 2-3 cities down for 5-10 min
+# 23 times with no complaints anywhere; the one real outage came with the complaints flag.
+SENSORS_ONLY = " (без жалоб — не тревога)"
 
 
 def _flags(html):
@@ -48,18 +50,14 @@ def parse(html, page=PAGE):
     if not isinstance(network.get("value"), bool) or not isinstance(complaints.get("value"), bool):
         return SourceResult(NAME, ERROR, "неожиданный формат флагов", url)
 
-    problems, too_few = [], False
+    sensors = None
     if network["value"]:
         cities = (network.get("valueReference") or {}).get("value")
-        problems.append(f"сенсоры: недоступен в {cities} городах" if cities
-                        else "сенсоры: недоступен по сети")
-        too_few = str(cities).isdigit() and int(cities) < MIN_CITIES
+        sensors = f"сенсоры: недоступен в {cities} городах" if cities else "сенсоры: недоступен по сети"
     if complaints["value"]:
-        problems.append("много жалоб пользователей")
-    elif too_few:
-        return SourceResult(NAME, OK, problems[0] + " (мало для тревоги)", url)
-    if problems:
-        return SourceResult(NAME, OUTAGE, "; ".join(problems), url)
+        return SourceResult(NAME, OUTAGE, "; ".join(filter(None, [sensors, COMPLAINTS_TEXT])), url)
+    if sensors:
+        return SourceResult(NAME, OK, sensors + SENSORS_ONLY, url)
     return SourceResult(NAME, OK, "сенсоры и жалобы в норме", url)
 
 

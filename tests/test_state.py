@@ -38,10 +38,27 @@ def test_detector404_is_immediate():
     assert messages[0].startswith("🔴")
 
 
-def test_sboyrf_is_immediate():
-    # its 50/hour threshold is rarely reached, so one check is enough
-    messages = run(st.new_state(), R("sboyrf", OUTAGE, "жалоб за час: 60"))
-    assert messages[0].startswith("🔴")
+def test_sboyrf_alone_never_starts_an_incident():
+    state = st.new_state()
+    for minute in range(0, 60, 5):
+        assert run(state, R("sboyrf", OUTAGE, "жалоб за час: 260"), minute=minute) == []
+    assert V(state)["incident"] is None
+
+
+def test_sboyrf_confirms_an_open_incident():
+    state = st.new_state()
+    run(state, R("detector404", OUTAGE), R("sboyrf", OK))
+    messages = run(state, R("detector404", OUTAGE), R("sboyrf", OUTAGE, "жалоб за час: 60"), minute=5)
+    assert len(messages) == 1 and "ещё один сайт" in messages[0]
+    assert V(state)["incident"]["sources"] == ["detector404", "sboyrf"]
+
+
+def test_sboyrf_does_not_keep_an_incident_open():
+    state = st.new_state()
+    run(state, R("detector404", OUTAGE), R("sboyrf", OUTAGE))
+    run(state, R("detector404", OK), R("sboyrf", OUTAGE), minute=5)
+    messages = run(state, R("detector404", OK), R("sboyrf", OUTAGE), minute=10)
+    assert messages[0].startswith("✅") and V(state)["incident"] is None
 
 
 def test_second_source_confirms():

@@ -6,12 +6,11 @@ Run it after an alert rule changes, with the timer stopped so no live run interl
     python3 -m monitor.recompute --db /var/lib/vtb-monitor/history.db --state /var/lib/vtb-monitor/state.json
     systemctl start vtb-monitor.timer
 
-Checks are re-read under the current source rules (DETECTOR404 cities), replayed through the
+Checks are re-read under the current source rules (DETECTOR404 sensors), replayed through the
 alert state machine, and the incident and source events are replaced. Sent messages stay:
 they are what really happened.
 """
 import argparse
-import re
 from collections import defaultdict
 from datetime import datetime
 
@@ -22,14 +21,12 @@ from .sources.base import OK, OUTAGE, SourceResult
 
 REPLAYED = ("incident_started", "incident_confirmed", "incident_resolved", "source_down", "source_back")
 RECOMPUTE_END = "закрыт при пересчёте истории"
-CITIES_ONLY_RE = re.compile(r"сенсоры: недоступен в (\d+) городах")
 
 
 def reclassify(source, status, details):
     """(status, details) under today's source rules."""
-    match = CITIES_ONLY_RE.fullmatch(details or "")
-    if source == "detector404" and status == OUTAGE and match and int(match.group(1)) < detector404.MIN_CITIES:
-        return OK, details + " (мало для тревоги)"
+    if source == "detector404" and status == OUTAGE and detector404.COMPLAINTS_TEXT not in (details or ""):
+        return OK, details + detector404.SENSORS_ONLY
     return status, details
 
 

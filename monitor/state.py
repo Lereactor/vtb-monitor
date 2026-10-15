@@ -14,7 +14,11 @@ from .sources.base import DISABLED, ERROR, OK, OUTAGE
 CROWD_CONFIRM_RUNS = 2
 ERROR_ALERT_RUNS = 6  # 30 min: DownRadar times out for 5-15 min several times a day
 RECOVERY_RUNS = 2
-IMMEDIATE = {"detector404", "sboyrf"}  # СБОЙ.РФ: 50+ complaints an hour is rare enough to trust at once
+IMMEDIATE = {"detector404"}  # its complaints flag is rare and has been right every time
+# СБОЙ.РФ alone is not trusted: 11 of its 12 alerts over 10-15.10 were 15-minute bursts of
+# 100-250 complaints with DownRadar at its usual 0-4, partly deleted by the site later.
+# It can only confirm an outage that another site started, and cannot keep one open.
+CONFIRM_ONLY = {"sboyrf"}
 HEARTBEAT_HOUR_MSK = 9
 SOURCE_DEFAULTS = {"last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
                    "error_reported": False, "details": "", "url": ""}
@@ -142,15 +146,16 @@ def process(state, service_id, results, now, events=None):
         _update_source(svc, service_id, result, incident_open, events)
 
     in_outage = [name for name in detectors if _counts(svc["sources"].get(name, {}))]
+    leading = [name for name in in_outage if name not in CONFIRM_ONLY]
     incident = svc["incident"]
     if incident is None:
-        if in_outage:
+        if leading:
             svc["incident"] = {"started_at": now.isoformat(), "sources": in_outage}
             svc["recovery_streak"] = 0
             text = notifier.incident_started(svc, service_id, in_outage, now)
             messages.append(text)
             events.append(Event("incident_started", service_id, ",".join(in_outage), text))
-    elif in_outage:
+    elif leading:
         svc["recovery_streak"] = 0
         for name in in_outage:
             if name not in incident["sources"]:
