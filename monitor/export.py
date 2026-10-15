@@ -36,8 +36,10 @@ def _now_block(db, state, service_id, now):
                          "count": last[1] if last else None, "details": last[2] if last else "",
                          "spark": [list(row) for row in spark]}
     incident = svc.get("incident")
-    return {"incident": {"start": history.iso(datetime.fromisoformat(incident["started_at"])), "sources": incident["sources"]}
-            if incident else None,
+    if incident:
+        incident = {"start": history.iso(datetime.fromisoformat(incident["started_at"])),
+                    "sources": incident["sources"]}
+    return {"incident": incident,
             "working": sum(1 for s in sources.values() if s["status"] in ("ok", "outage")),
             "total": len(sources), "sources": sources}
 
