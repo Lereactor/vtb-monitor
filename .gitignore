@@ -7,3 +7,4 @@ site/node_modules/
 site/dist/
 site/dist-site/
 site/public/sample/
+site/tsconfig.tsbuildinfo
