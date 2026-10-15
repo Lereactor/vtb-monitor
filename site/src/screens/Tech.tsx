@@ -14,13 +14,32 @@ function when(ts: string) {
   return `${dayMonth(ts)} ${hm(ts)}`
 }
 
-export default function Tech({ priv, services }: { priv: PrivateData; services: ServiceId[] }) {
+function SiteName({ svc, src, pages }: { svc: string; src: string; pages: Record<string, string> }) {
+  const url = pages[`${svc}/${src}`]
+  const title = TITLES[src] ?? src
+  return url
+    ? <a className="ext-link" href={url} target="_blank" rel="noreferrer" title={`Открыть страницу ${title}`}>{title} ↗</a>
+    : <>{title}</>
+}
+
+// links in message texts become clickable
+function Linkified({ text }: { text: string }) {
+  return <>{text.split(/(https?:\/\/\S+)/).map((part, i) => i % 2
+    ? <a key={i} className="ext-link" href={part} target="_blank" rel="noreferrer">{part}</a>
+    : part)}</>
+}
+
+export default function Tech({ priv, services, pages }: {
+  priv: PrivateData
+  services: ServiceId[]
+  pages: Record<string, string>
+}) {
   const [source, setSource] = useState('all')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
   const rows = priv.checks.filter(([, svc, src, st]) => services.includes(svc)
     && (source === 'all' || src === source) && (status === 'all' || st === status))
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE))
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE))
   const shown = rows.slice(page * PAGE, page * PAGE + PAGE)
   const sources = [...new Set(priv.checks.map((r) => r[2]))]
 
@@ -50,7 +69,7 @@ export default function Tech({ priv, services }: { priv: PrivateData; services: 
                 <tr key={ts + svc + src + i}>
                   <td className="num">{when(ts)}</td>
                   <td>{SERVICE_SHORT[svc]}</td>
-                  <td>{TITLES[src] ?? src}</td>
+                  <td><SiteName svc={svc} src={src} pages={pages} /></td>
                   <td>{STATUS_TEXT[st] ?? st}</td>
                   <td className="num">{count ?? ''}</td>
                   <td className="dim">{details}</td>
@@ -59,11 +78,11 @@ export default function Tech({ priv, services }: { priv: PrivateData; services: 
             </tbody>
           </table>
         </div>
-        {pages > 1 && (
+        {pageCount > 1 && (
           <div className="pager">
             <button className="link-button" disabled={page === 0} onClick={() => setPage(page - 1)}>← новее</button>
-            <span className="small dim">стр. {page + 1} из {pages}</span>
-            <button className="link-button" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>старее →</button>
+            <span className="small dim">стр. {page + 1} из {pageCount}</span>
+            <button className="link-button" disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>старее →</button>
           </div>
         )}
       </section>
@@ -77,7 +96,7 @@ export default function Tech({ priv, services }: { priv: PrivateData; services: 
                 <tr key={ts + kind + svc + src}>
                   <td className="num">{when(ts)}</td>
                   <td>{kind === 'source_down' ? '⚠️ перестал отвечать' : '✅ снова отвечает'}</td>
-                  <td>{TITLES[src] ?? src} · {SERVICE_SHORT[svc]}</td>
+                  <td><SiteName svc={svc} src={src} pages={pages} /> · {SERVICE_SHORT[svc]}</td>
                   <td className="dim">{text}</td>
                 </tr>
               ))}
@@ -91,7 +110,7 @@ export default function Tech({ priv, services }: { priv: PrivateData; services: 
         {priv.messages.length ? priv.messages.slice(0, 200).map(([ts, text]) => (
           <div key={ts + text} style={{ borderTop: '1px solid var(--grid)', padding: '8px 0' }}>
             <div className="small muted">{when(ts)}</div>
-            <pre className="pre">{text}</pre>
+            <pre className="pre"><Linkified text={text} /></pre>
           </div>
         )) : <div className="small muted">Пока не было (журнал сообщений ведётся с 15.10).</div>}
       </section>

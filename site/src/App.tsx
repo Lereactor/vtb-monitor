@@ -140,7 +140,7 @@ export default function App() {
           <Analytics block={data.analytics[`${view.period}|${view.service}`]} period={view.period} service={view.service}
                      pages={pages} />
         )}
-        {priv && tab === 'tech' && <Tech priv={priv} services={filter} />}
+        {priv && tab === 'tech' && <Tech priv={priv} services={filter} pages={pages} />}
       </main>
 
       {login && (
