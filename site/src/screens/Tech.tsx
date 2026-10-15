@@ -24,7 +24,7 @@ function SiteName({ svc, src, pages }: { svc: string; src: string; pages: Record
 
 // links in message texts become clickable
 function Linkified({ text }: { text: string }) {
-  return <>{text.split(/(https?:\/\/\S+)/).map((part, i) => i % 2
+  return <>{text.split(/(https?:\/\/\S+?)(?=[.,;)]?(?:\s|$))/).map((part, i) => i % 2
     ? <a key={i} className="ext-link" href={part} target="_blank" rel="noreferrer">{part}</a>
     : part)}</>
 }
