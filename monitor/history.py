@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS hourly (hour TEXT, service TEXT, source TEXT, checks 
 CREATE TABLE IF NOT EXISTS events (ts TEXT, kind TEXT, service TEXT, source TEXT, text TEXT);
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY, ts TEXT, kind TEXT, text TEXT, url TEXT);
+CREATE TABLE IF NOT EXISTS reach (ts TEXT, service TEXT, host TEXT, region TEXT, up INTEGER,
+                                  total INTEGER, ms INTEGER, details TEXT);
+CREATE INDEX IF NOT EXISTS reach_ts ON reach (ts);
 """
 
 
@@ -34,9 +37,14 @@ def count_from_details(details):
     return int(match.group(1)) if match else None
 
 
-def record_run(db, now, results, events):
-    """results: {service_id: [SourceResult]}; events: [state.Event]."""
+def record_run(db, now, results, events, reach=None):
+    """results: {service_id: [SourceResult]}; events: [state.Event];
+    reach: {service_id: {host: {region: availability.Reach}}}."""
     ts = iso(now)
+    db.executemany("INSERT INTO reach VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                   [(ts, service_id, host, r.region, r.up, r.total, r.ms, r.details())
+                    for service_id, hosts in (reach or {}).items()
+                    for host, regions in hosts.items() for r in regions.values() if r.total])
     db.executemany("INSERT INTO checks VALUES (?, ?, ?, ?, ?, ?)",
                    [(ts, service_id, r.source, r.status, count_from_details(r.details), r.details)
                     for service_id, service_results in results.items() for r in service_results])
@@ -53,4 +61,5 @@ def roll_up(db, now):
                          sum(status = 'SOURCE_ERROR'), max(count)
                   FROM checks WHERE ts < ? GROUP BY 1, 2, 3""", (cutoff,))
     db.execute("DELETE FROM checks WHERE ts < ?", (cutoff,))
+    db.execute("DELETE FROM reach WHERE ts < ?", (cutoff,))  # an extra indicator: no roll-up
     db.commit()

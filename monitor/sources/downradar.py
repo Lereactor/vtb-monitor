@@ -12,6 +12,9 @@ HOUR_RE = re.compile(r"За последний час\s*-\s*(\d+)")
 # "есть проблемы" means "more than usual for this hour": on a quiet page (broker.vtb.ru had
 # no complaints in 30 days) one complaint is enough, and on vtb.ru it lingers at 4-9 an hour
 MIN_HOUR_COMPLAINTS = 10
+# db.vtb.ru (Бизнес-онлайн) gets 0-6 complaints a day (20 in 30 days to 15.10): a few in one hour
+# is already unusual there
+MIN_HOUR_COMPLAINTS_BY_PAGE = {"db.vtb.ru": 3}
 
 
 def _url(page):
@@ -40,7 +43,7 @@ def parse(html, page=PAGE):
     if status == "нет проблем":
         return SourceResult(NAME, OK, details, url)
     if "есть проблем" in status:
-        if hour and int(hour.group(1)) < MIN_HOUR_COMPLAINTS:
+        if hour and int(hour.group(1)) < MIN_HOUR_COMPLAINTS_BY_PAGE.get(page, MIN_HOUR_COMPLAINTS):
             return SourceResult(NAME, OK, details + " (мало для тревоги)", url)
         return SourceResult(NAME, OUTAGE, details, url)
     return SourceResult(NAME, ERROR, f"неизвестный статус: {status}", url)

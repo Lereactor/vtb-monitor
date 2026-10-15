@@ -26,6 +26,23 @@ def _status(source):
     return "outage" if source.get("confirmed") == OUTAGE else "ok"
 
 
+def _sites_now(db, service_id, now):
+    """Each bank site: the latest answer per region and 24 hours of (up, total) per region."""
+    since = history.iso(now - timedelta(hours=SPARK_HOURS))
+    sites = []
+    for host in SERVICES[service_id].sites:
+        regions = {}
+        for region in ("ru", "world"):
+            last = db.execute("SELECT ts, up, total, ms, details FROM reach WHERE service = ? AND host = ? "
+                              "AND region = ? ORDER BY ts DESC LIMIT 1", (service_id, host, region)).fetchone()
+            spark = db.execute("SELECT ts, up, total FROM reach WHERE service = ? AND host = ? AND region = ? "
+                               "AND ts >= ? ORDER BY ts", (service_id, host, region, since)).fetchall()
+            regions[region] = {"checked_at": last[0], "up": last[1], "total": last[2], "ms": last[3],
+                               "details": last[4], "spark": [list(row) for row in spark]} if last else None
+        sites.append({"host": host, "url": f"https://{host}/", **regions})
+    return sites
+
+
 def _now_block(db, state, service_id, now):
     svc = state["services"].get(service_id, {})
     since = history.iso(now - timedelta(hours=SPARK_HOURS))
@@ -45,7 +62,7 @@ def _now_block(db, state, service_id, now):
                     "sources": incident["sources"]}
     return {"incident": incident,
             "working": sum(1 for s in sources.values() if s["status"] in ("ok", "outage")),
-            "total": len(sources), "sources": sources}
+            "total": len(sources), "sources": sources, "sites": _sites_now(db, service_id, now)}
 
 
 def _incident(incident, now):
@@ -64,19 +81,25 @@ def build(db, state, now):
                                        for name, page in s.detectors.items()]}
                      for sid, s in SERVICES.items()},
         "now": {sid: _now_block(db, state, sid, now) for sid in SERVICES},
-        "incidents": [_incident(i, now) for i in reversed(analytics.incidents(db, now))],
+        "incidents": [_incident(i, now) for i in reversed(analytics.incidents(db, now))],  # monitored only
         "analytics": analytics.report(db, now),
     }
+    monitored = ",".join("?" * len(SERVICES))
     checks = db.execute(
-        "SELECT ts, service, source, status, count, details FROM checks "
-        "WHERE ts >= ? OR (ts >= ? AND status != ?) ORDER BY ts DESC, rowid",
-        (history.iso(now - timedelta(hours=PRIVATE_ALL_HOURS)),
+        f"SELECT ts, service, source, status, count, details FROM checks WHERE service IN ({monitored}) "
+        "AND (ts >= ? OR (ts >= ? AND status != ?)) ORDER BY ts DESC, rowid",
+        (*SERVICES, history.iso(now - timedelta(hours=PRIVATE_ALL_HOURS)),
          history.iso(now - timedelta(days=PRIVATE_ISSUES_DAYS)), OK)).fetchall()
     private = {
         "checks": [list(row) for row in checks],
         "source_events": [list(row) for row in db.execute(
-            "SELECT ts, kind, service, source, text FROM events "
-            "WHERE kind IN ('source_down', 'source_back') ORDER BY ts DESC, rowid")],
+            f"SELECT ts, kind, service, source, text FROM events WHERE service IN ({monitored}) "
+            "AND kind IN ('source_down', 'source_back') ORDER BY ts DESC, rowid", tuple(SERVICES))],
+        # bank sites that did not answer from every point: 30 days, with which points failed
+        "reach": [list(row) for row in db.execute(
+            f"SELECT ts, service, host, region, up, total, details FROM reach WHERE service IN ({monitored}) "
+            "AND ts >= ? AND up < total ORDER BY ts DESC, rowid",
+            (*SERVICES, history.iso(now - timedelta(days=PRIVATE_ISSUES_DAYS))))],
         "messages": [list(row) for row in db.execute(
             "SELECT ts, text FROM events WHERE kind = 'message_sent' ORDER BY ts DESC, rowid")],
     }

@@ -1,8 +1,11 @@
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from monitor import history, recompute
 from monitor import state as st
 from monitor.sources.base import OK, OUTAGE, SourceResult
+
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
 
 T0 = datetime(2026, 10, 10, 4, 0, tzinfo=timezone.utc)
 ONE_CITY = "сенсоры: недоступен в 1 городах"

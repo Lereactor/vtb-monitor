@@ -12,6 +12,8 @@ MSK = timezone(timedelta(hours=3))
 TITLES = {"detector404": "DETECTOR404", "downreport": "DownReport",
           "downradar": "DownRadar", "sboyrf": "СБОЙ.РФ", "telegram": "Telegram ВТБ"}
 INVEST_RE = re.compile(r"инвест|брокер", re.I)
+BUSINESS_RE = re.compile(r"бизнес|юрлиц|юридическ\w* лиц|предпринимател", re.I)
+REGION_TITLES = {"ru": "Россия", "world": "мир"}
 
 
 def _hm(moment):
@@ -35,6 +37,26 @@ def _evidence(svc, name):
     return line + (f"\n{source['url']}" if source["url"] else "")
 
 
+def _reach_mark(up, total):
+    return "✅" if up == total else ("❌" if up == 0 else "⚠️")
+
+
+def sites_line(svc):
+    """«Сайты: db.vtb.ru ✅ Россия 4/4, ✅ мир 4/4; …» from the latest availability check, or ""."""
+    parts = []
+    for host, regions in svc.get("sites", {}).items():
+        marks = [f"{_reach_mark(*regions[r])} {REGION_TITLES[r]} {regions[r][0]}/{regions[r][1]}"
+                 for r in REGION_TITLES if r in regions]
+        if marks:
+            parts.append(f"{host} {', '.join(marks)}")
+    return "Сайты открываются: " + "; ".join(parts) + "." if parts else ""
+
+
+def _with_sites(lines, svc):
+    line = sites_line(svc)
+    return [*lines, line] if line else lines
+
+
 def _tally(svc, service_id, agreeing):
     return f"Сбой видят сайтов: {agreeing} из {_working_detectors(svc, service_id)}."
 
@@ -45,14 +67,14 @@ def incident_started(svc, service_id, names, now):
              _tally(svc, service_id, len(names))]
     if len(names) == 1:
         lines.append("Пока только один сайт — возможна ложная тревога.")
-    return "\n".join(lines)
+    return "\n".join(_with_sites(lines, svc))
 
 
 def incident_confirmed(svc, service_id, name, agreeing):
     """agreeing: detectors in outage right now (not all that ever joined)."""
-    return "\n".join([f"🔴 {_title(service_id)}: сбой подтверждает ещё один сайт",
-                      _evidence(svc, name),
-                      _tally(svc, service_id, agreeing)])
+    return "\n".join(_with_sites([f"🔴 {_title(service_id)}: сбой подтверждает ещё один сайт",
+                                  _evidence(svc, name),
+                                  _tally(svc, service_id, agreeing)], svc))
 
 
 def incident_resolved(svc, service_id, now):
@@ -111,7 +133,8 @@ def sources_changed(state, events):
 
 def official_post(post):
     what = "о проблемах" if post.kind == "outage" else "о восстановлении"
-    about = " (Мои Инвестиции)" if INVEST_RE.search(post.text) else ""
+    about = (" (Мои Инвестиции)" if INVEST_RE.search(post.text)
+             else " (Бизнес)" if BUSINESS_RE.search(post.text) else "")
     text = post.text if len(post.text) <= 700 else post.text[:700] + "…"
     return f"📢 ВТБ официально сообщает {what}{about}\n«{text}»\n{post.url}"
 
@@ -119,9 +142,18 @@ def official_post(post):
 LOW_DISK_MB = 200
 
 
+def _sites(state):
+    lines = []
+    for service_id in SERVICES:
+        line = sites_line(state["services"].get(service_id, {}))
+        if line:
+            lines.append(f"{_title(service_id)}: {line[0].lower()}{line[1:]}")
+    return ["", *lines] if lines else []
+
+
 def heartbeat(state, free_mb=None):
     lines = ["☀️ Оповещатель ВТБ работает, проверяет каждые 5 минут.",
-             "", "Проверки:", *_checks(state), "", _outage_line(state)]
+             "", "Проверки:", *_checks(state), *_sites(state), "", _outage_line(state)]
     if free_mb is not None and free_mb < LOW_DISK_MB:
         lines += ["", f"⚠️ На сервере осталось {free_mb} МБ места."]
     return "\n".join(lines)

@@ -66,13 +66,50 @@ export default function Analytics({ block, period, service, pages }: {
       <section className="section card">
         <h2>Жалобы в час {daily && <span className="small dim">(максимум за день)</span>}</h2>
         {complaints.length ? <Lines series={complaints} formatX={formatX} />
-          : <div className="empty">Сайты с числом жалоб (DownRadar, СБОЙ.РФ) за период ничего не показали.</div>}
+          : <div className="empty">DownRadar (единственный сайт с числом жалоб) за период ничего не показал.</div>}
       </section>
 
       <section className="section card">
         <h2>Когда больше всего жалоб</h2>
         <Heatmap cells={block.heatmap} />
       </section>
+
+      {(block.sites ?? []).length > 0 && (
+        <section className="section card">
+          <h2>Открываются ли сайты банка</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Сайт</th>
+                  {service === 'all' && <th>Сервис</th>}
+                  <th className="num">Из России</th>
+                  <th className="num">Из-за рубежа</th>
+                  <th className="num">Не открывался из России, мин</th>
+                  <th className="num">Из-за рубежа, мин</th>
+                </tr>
+              </thead>
+              <tbody>
+                {block.sites.map((s) => (
+                  <tr key={s.service + s.host}>
+                    <td><a className="ext-link" href={`https://${s.host}/`} target="_blank" rel="noreferrer"
+                           title={`Открыть ${s.host}`}>{s.host} ↗</a></td>
+                    {service === 'all' && <td>{SERVICE_SHORT[s.service]}</td>}
+                    <td className="num">{s.ru.share !== null ? percent(s.ru.share) : '—'}</td>
+                    <td className="num">{s.world.share !== null ? percent(s.world.share) : '—'}</td>
+                    <td className="num">{s.ru.dark_minutes}</td>
+                    <td className="num">{s.world.dark_minutes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="small muted">
+            Процент — доля точек проверки, где сайт ответил. «Не открывался» — сколько минут сайт не ответил
+            ни в одной точке региона (хотя бы двух). Это дополнительный показатель: тревогу он не поднимает.
+          </p>
+        </section>
+      )}
 
       <section className="section card">
         <h2>Сайты-мониторы</h2>

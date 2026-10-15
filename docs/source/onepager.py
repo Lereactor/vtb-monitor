@@ -116,16 +116,16 @@ def badge(x, y, r, color, mark):
 c.setFillColor(VTB)
 c.rect(0, H - 78, W, 78, stroke=0, fill=1)
 text(M, H - 42, "Оповещатель о сбоях ВТБ", "B", 24, white)
-text(M, H - 63, "Сам следит 24/7 за ВТБ и ВТБ Мои Инвестиции и сразу пишет в Telegram-канал", "R", 12, HexColor("#CFD8F5"))
+text(M, H - 63, "Следит 24/7 за ВТБ Бизнес-онлайн и Мои Инвестиции, пишет в Telegram", "R", 12, HexColor("#CFD8F5"))
 SITE = "lereactor.github.io/vtb-monitor-live"
 text(W - M, H - 36, "Сайт: статус сейчас, все сбои, аналитика", "R", 9, HexColor("#CFD8F5"), "r")
 text(W - M, H - 52, SITE, "B", 12, white, "r")
 c.linkURL("https://" + SITE + "/", (W - M - stringWidth(SITE, "B", 12), H - 56, W - M, H - 40), relative=0)
 
 # key numbers strip
-stats = [("2 сервиса", "ВТБ и ВТБ Мои Инвестиции"),
+stats = [("2 сервиса", "Бизнес-онлайн и Мои Инвестиции"),
          ("каждые 5 мин", "автоматическая проверка"),
-         ("5 источников", "4 сайта жалоб + канал ВТБ"),
+         ("3 сайта жалоб", "+ канал ВТБ + доступность сайтов"),
          ("5–10 мин", "от всплеска жалоб до оповещения")]
 sw = (W - 2 * M - 3 * 12) / 4
 for i, (big, small) in enumerate(stats):
@@ -141,7 +141,7 @@ fh = 168
 fy = top - 14 - fh  # bottom of flow area
 mid = fy + fh / 2 + 10  # shared centre line of the flow boxes
 
-VTB_CHIP, INV_CHIP = (VTB, "ВТБ"), (HexColor("#0F8B7E"), "Инвест.")
+VTB_CHIP, INV_CHIP = (VTB, "Бизнес"), (HexColor("#0F8B7E"), "Инвест.")
 
 
 def chip(x, y, spec):
@@ -155,10 +155,10 @@ def chip(x, y, spec):
 
 
 # sources column
-srcs = [("DETECTOR404", "флаг «много жалоб»", [VTB_CHIP, INV_CHIP]),
-        ("DownReport", "жалобы пользователей", [VTB_CHIP, INV_CHIP]),
+srcs = [("DownReport", "жалобы пользователей", [VTB_CHIP, INV_CHIP]),
         ("DownRadar", "жалобы пользователей", [VTB_CHIP, INV_CHIP]),
-        ("СБОЙ.РФ", "жалобы, только подтверждение", [VTB_CHIP])]
+        ("DETECTOR404", "флаг «много жалоб»", [INV_CHIP]),
+        ("Сайты банка", "из России и мира", [VTB_CHIP, INV_CHIP])]
 sx, sw_, sh, gap = M, 172, 26, 6
 for i, (name, sub, chips) in enumerate(srcs):
     y = fy + fh - (i + 1) * sh - i * gap
@@ -173,16 +173,16 @@ for i, (name, sub, chips) in enumerate(srcs):
 # chip legend next to the section title
 lx0 = M + 112
 lx0 += chip(lx0, top - 2, VTB_CHIP) + 4
-text(lx0, top, "банк, ВТБ Онлайн", "R", 8, MUTED)
-lx0 += stringWidth("банк, ВТБ Онлайн", "R", 8) + 12
+text(lx0, top, "ВТБ Бизнес-онлайн (db.vtb.ru)", "R", 8, MUTED)
+lx0 += stringWidth("ВТБ Бизнес-онлайн (db.vtb.ru)", "R", 8) + 12
 lx0 += chip(lx0, top - 2, INV_CHIP) + 4
-text(lx0, top, "ВТБ Мои Инвестиции (есть на трёх сайтах из четырёх)", "R", 8, MUTED)
+text(lx0, top, "ВТБ Мои Инвестиции", "R", 8, MUTED)
 cy_src = fy + fh - 2 * sh - 1.5 * gap
 oy = fy + 2
 box(sx, oy, sw_, sh, HexColor("#E8EEFC"), BLUE, 5)
 text(sx + 9, oy + 15, "Канал @bankvtb", "B", 9, BLUE)
-text(sx + 9, oy + 5, "официальные сообщения ВТБ", "R", 7, MUTED)
-chip(sx + sw_ - 6 - (stringWidth("Инвест.", "B", 6.5) + 8) - 3 - (stringWidth("ВТБ", "B", 6.5) + 8),
+text(sx + 9, oy + 5, "официальные посты", "R", 7, MUTED)
+chip(sx + sw_ - 6 - (stringWidth("Инвест.", "B", 6.5) + 8) - 3 - (stringWidth("Бизнес", "B", 6.5) + 8),
      oy + 8, VTB_CHIP)
 chip(sx + sw_ - 6 - (stringWidth("Инвест.", "B", 6.5) + 8), oy + 8, INV_CHIP)
 
@@ -194,7 +194,7 @@ box(vx, vy, vw, vh, PANEL, None)
 text(vx + 12, vy + vh - 20, "Сервер (Россия)", "B", 11)
 para(vx + 12, vy + vh - 36, "раз в 5 минут проверяет оба сервиса и решает: сбой или нет", vw - 24,
      size=8.5, color=MUTED)
-para(vx + 12, vy + 26, "ложные тревоги отсекает: 2 проверки подряд, СБОЙ.РФ только подтверждает", vw - 24, size=8,
+para(vx + 12, vy + 26, "ложные тревоги отсекает: 2 проверки подряд; сайты банка — доп. показатель, без тревог", vw - 24, size=8,
      color=MUTED)
 arrow(sx + sw_ + 4, mid, vx - 4, mid, INK)
 
@@ -235,8 +235,8 @@ text((gx + gw + tx) / 2, mid + 7, "≈1 мин", "R", 7.5, MUTED, "c")
 by = 28  # bottom margin
 tl_top = fy - 22
 lw_ = 520
-text(M, tl_top, "ПРИМЕР: СБОЙ В ПРИЛОЖЕНИИ ВТБ (условные время и цифры)", "B", 10, MUTED)
-text(M, tl_top - 13, "Сбой Мои Инвестиции идёт своей цепочкой сообщений, подтверждение — «2 из 3»",
+text(M, tl_top, "ПРИМЕР: СБОЙ ВТБ БИЗНЕС-ОНЛАЙН (условные время и цифры)", "B", 10, MUTED)
+text(M, tl_top - 13, "Сбой Мои Инвестиции идёт своей цепочкой сообщений, там подтверждение — «2 из 3»",
      "R", 8.5, MUTED)
 ly = (tl_top + by) / 2 + 4  # timeline axis
 x0, x1 = M + 48, M + lw_
@@ -254,8 +254,8 @@ arrow(x1 - 10, ly, x1 + 6, ly, LINE, 2)
 
 events = [  # minute, time, color, mark, title, sub, above
     (0, "10:00", GREY, None, "Клиенты жалуются", "на сайтах жалоб", True),
-    (5, "10:05", RED, "!", "Похоже на сбой", "видит 1 сайт из 4", False),
-    (15, "10:15", ORANGE, "+", "Подтверждение", "видят 2 сайта из 4", True),
+    (5, "10:05", RED, "!", "Похоже на сбой", "видит 1 сайт из 2", False),
+    (15, "10:15", ORANGE, "+", "Подтверждение", "видят 2 сайта из 2", True),
     (27, "10:27", BLUE, "i", "ВТБ официально", "«наблюдаются затруднения»", False),
     (60, "11:00", GREY, None, "Жалобы стихли", "", True),
     (70, "11:10", GREEN, "ok", "Всё в норме", "сбой длился 1 ч 05 мин", False),
@@ -297,10 +297,10 @@ lx = M + lw_ + 40
 lwid = W - M - lx
 box(lx - 14, by - 4, lwid + 14, tl_top - by + 12, PANEL, None)
 text(lx, tl_top - 8, "ЧТО ПРИХОДИТ В КАНАЛ", "B", 10, MUTED)
-text(lx, tl_top - 22, "в начале — сервис: «ВТБ» или «ВТБ Мои Инвестиции»", "R", 8, MUTED)
+text(lx, tl_top - 22, "в начале — сервис: Бизнес-онлайн или Мои Инвестиции", "R", 8, MUTED)
 legend = [
-    (RED, "!", "Похоже на сбой", "цифры, ссылка, «видят сайтов: 1 из 4»"),
-    (ORANGE, "+", "Сбой подтверждает ещё сайт", "«2 из 4»: тем вероятнее сбой"),
+    (RED, "!", "Похоже на сбой", "цифры, ссылка, открываются ли сайты банка"),
+    (ORANGE, "+", "Сбой подтверждает ещё сайт", "«2 из 2»: тем вероятнее сбой"),
     (BLUE, "i", "ВТБ официально сообщает", "пост из канала банка"),
     (GREEN, "ok", "Всё в норме", "сбой закончился, с длительностью"),
     (GREY, "x", "Сайт не отвечает 30 мин", "не сбой банка; статус всех проверок"),

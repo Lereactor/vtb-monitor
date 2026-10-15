@@ -1,13 +1,14 @@
-import type { Period, ServiceFilter, ServiceId, Status } from './types'
+import type { Period, Region, ServiceFilter, ServiceId, Status } from './types'
 
 const MSK = 'Europe/Moscow'
 
-export const SERVICE_SHORT: Record<ServiceId, string> = { vtb: 'ВТБ', invest: 'Мои Инвестиции' }
+export const SERVICE_SHORT: Record<ServiceId, string> = { business: 'Бизнес-онлайн', invest: 'Мои Инвестиции' }
 export const SERVICE_FILTERS: { id: ServiceFilter; label: string }[] = [
   { id: 'all', label: 'Все' },
-  { id: 'vtb', label: 'ВТБ' },
+  { id: 'business', label: 'Бизнес-онлайн' },
   { id: 'invest', label: 'Мои Инвестиции' },
 ]
+export const REGION_TITLES: Record<Region, string> = { ru: 'Из России', world: 'Из-за рубежа' }
 export const PERIODS: { id: Period; label: string; hours: number | null }[] = [
   { id: '24h', label: '24 ч', hours: 24 },
   { id: '7d', label: '7 д', hours: 24 * 7 },
@@ -51,6 +52,11 @@ export function duration(minutes: number): string {
   return m ? `${h} ч ${String(m).padStart(2, '0')} мин` : `${h} ч`
 }
 
+/** ✅ every point answered, ⚠️ some, ❌ none */
+export function reachIcon(up: number, total: number): string {
+  return up === total ? '✅' : up === 0 ? '❌' : '⚠️'
+}
+
 export function percent(share: number): string {
   return `${(share * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
 }
@@ -65,5 +71,5 @@ export function inPeriod(ts: string, period: Period, now = Date.now()): boolean 
 }
 
 export function services(filter: ServiceFilter): ServiceId[] {
-  return filter === 'all' ? ['vtb', 'invest'] : [filter]
+  return filter === 'all' ? ['business', 'invest'] : [filter]
 }

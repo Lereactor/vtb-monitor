@@ -1,6 +1,7 @@
+import ReachStrip from '../charts/ReachStrip'
 import Sparkline from '../charts/Sparkline'
-import { hm, SERVICE_SHORT, STATUS, TITLES } from '../format'
-import type { PublicData, ServiceId } from '../types'
+import { hm, reachIcon, REGION_TITLES, SERVICE_SHORT, STATUS, TITLES } from '../format'
+import type { PublicData, Region, ServiceId, SiteNow } from '../types'
 
 function Banner({ data, service }: { data: PublicData; service: ServiceId }) {
   const now = data.now[service]
@@ -24,6 +25,34 @@ function Banner({ data, service }: { data: PublicData; service: ServiceId }) {
           ? 'сайты уже в норме — сбой закроется после двух спокойных проверок подряд'
           : <>видят сайтов: {seeing} из {now.working}{seeing === 1 && ' — пока один, возможна ложная тревога'}</>}
       </span>
+    </div>
+  )
+}
+
+function Site({ site }: { site: SiteNow }) {
+  return (
+    <div className="card">
+      <div className="source__head">
+        <a className="source__name ext-link" href={site.url} target="_blank" rel="noreferrer"
+           title={`Открыть ${site.host}`}>{site.host} ↗</a>
+      </div>
+      {(['ru', 'world'] as Region[]).map((region) => {
+        const r = site[region]
+        return (
+          <div className="reach" key={region}>
+            <div className="reach__head">
+              <span className="small dim">{REGION_TITLES[region]}</span>
+              <span className="pill" title={r?.details}>
+                {r ? <>{reachIcon(r.up, r.total)} {r.up} из {r.total}{r.ms !== null && ` · ${r.ms} мс`}</> : '❔ нет данных'}
+              </span>
+            </div>
+            {r && <ReachStrip points={r.spark} label={REGION_TITLES[region]} />}
+          </div>
+        )
+      })}
+      <div className="small muted">
+        {site.ru ? `проверено в ${hm(site.ru.checked_at)}` : 'ещё не проверялся'} · сутки
+      </div>
     </div>
   )
 }
@@ -62,12 +91,22 @@ export default function Now({ data, services }: { data: PublicData; services: Se
               )
             })}
           </div>
+          {(data.now[service].sites ?? []).length > 0 && (
+            <>
+              <h3 className="subhead">Открываются ли сайты {SERVICE_SHORT[service]}</h3>
+              <div className="grid">
+                {data.now[service].sites.map((site) => <Site key={site.host} site={site} />)}
+              </div>
+            </>
+          )}
         </section>
       ))}
       <p className="small muted section">
-        Сайты проверяются каждые 5 минут. {SERVICE_SHORT.vtb} — банк и ВТБ Онлайн,{' '}
-        {SERVICE_SHORT.invest} — брокерское приложение. Жалобы пользователей — ранний сигнал,
-        подтверждённый сбой — только сообщение банка.
+        Проверки каждые 5 минут. {SERVICE_SHORT.business} — интернет-банк для бизнеса (db.vtb.ru,
+        старый vtbbo.ru), {SERVICE_SHORT.invest} — брокерское приложение. Жалобы пользователей — ранний
+        сигнал, подтверждённый сбой — только сообщение банка. Открываются ли сайты, проверяется из России
+        (сервер оповещателя и точки check-host.net в Москве и Петербурге) и из-за рубежа (Франкфурт,
+        Амстердам, Лондон, Лос-Анджелес): это дополнительный показатель, тревогу он не поднимает.
       </p>
     </>
   )

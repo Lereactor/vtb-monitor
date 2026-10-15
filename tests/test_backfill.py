@@ -1,8 +1,11 @@
+import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 
 from monitor import backfill, history
 from monitor.sources.base import OK, OUTAGE, SourceResult
+
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
 
 FIXTURE = Path(__file__).parent / "fixtures" / "journal_sample.txt"
 

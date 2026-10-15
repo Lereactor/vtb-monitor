@@ -12,6 +12,11 @@ class FakeResp:
     def json(self):
         return json.loads(self.text)
 
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
 
 class FakeSession:
     """Returns queued responses (or raises queued exceptions) in order."""

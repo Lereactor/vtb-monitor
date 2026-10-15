@@ -1,8 +1,11 @@
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from monitor import analytics, history
 from monitor.sources.base import OK, OUTAGE, SourceResult
 from monitor.state import Event
+
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
 
 T0 = datetime(2026, 10, 14, 9, 0, tzinfo=timezone.utc)  # Wed 12:00 MSK
 

@@ -1,7 +1,12 @@
+import json
+
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from monitor import state as st
 from monitor.sources.base import DISABLED, ERROR, OK, OUTAGE, SourceResult
+
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
 
 T0 = datetime(2026, 10, 4, 11, 0, tzinfo=timezone.utc)
 
@@ -329,3 +334,20 @@ def test_invest_confirmation_counts_its_own_detectors():
                           T0 + timedelta(minutes=5))
     assert messages == ["🔴 ВТБ Мои Инвестиции: сбой подтверждает ещё один сайт\n"
                         "DownRadar: d\nhttps://u\nСбой видят сайтов: 2 из 2."]
+
+
+def test_retired_service_is_dropped(tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"services": {"gone": {"sources": {}, "incident": None},
+                                             "invest": {"sources": {}, "incident": None}}}),
+                    encoding="utf-8")
+    assert set(st.load_state(path)["services"]) == {"invest"}
+
+
+def test_set_sites_keeps_answered_regions():
+    from monitor.availability import Point, Reach
+    state = st.new_state()
+    st.set_sites(state, "invest", {"invest.vtb.ru": {
+        "ru": Reach("invest.vtb.ru", "ru", [Point("a", True), Point("b", False)]),
+        "world": Reach("invest.vtb.ru", "world")}})
+    assert state["services"]["invest"]["sites"] == {"invest.vtb.ru": {"ru": [1, 2]}}

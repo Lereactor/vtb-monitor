@@ -1,9 +1,12 @@
+import pytest
 import json
 from datetime import datetime, timedelta, timezone
 
 from monitor import export, history
 from monitor import state as st
 from monitor.sources.base import ERROR, OK, OUTAGE, SourceResult
+
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
 
 NOW = datetime(2026, 10, 15, 9, 0, tzinfo=timezone.utc)
 
@@ -77,3 +80,20 @@ def test_public_holds_nothing_private(tmp_path):
     text = json.dumps(public, ensure_ascii=False)
     assert "checks" not in public and "messages" not in public
     assert "HTTP 500" not in text  # old error details only in the private part
+
+
+def test_site_availability_now_and_private(tmp_path):
+    from monitor.availability import Point, Reach
+    db = history.connect(tmp_path / "h.db")
+    for hours, up in ((-30, 4), (-2, 4), (-1, 3)):
+        history.record_run(db, at(hours), {}, [], {"invest": {"invest.vtb.ru": {
+            "ru": Reach("invest.vtb.ru", "ru", [Point(f"п{i}", i < up, 100) for i in range(4)])}}})
+    history.record_run(db, at(-1), {}, [], {"retired": {"x.ru": {"ru": Reach("x.ru", "ru", [Point("a", False)])}}})
+    public, private = export.build(db, st.new_state(), NOW)
+    site = public["now"]["invest"]["sites"][0]
+    assert site["host"] == "invest.vtb.ru" and site["url"] == "https://invest.vtb.ru/"
+    assert (site["ru"]["up"], site["ru"]["total"], site["ru"]["ms"]) == (3, 4, 100)
+    assert [row[1:] for row in site["ru"]["spark"]] == [[4, 4], [3, 4]]  # the last 24 hours
+    assert site["world"] is None
+    assert [row[2] for row in private["reach"]] == ["invest.vtb.ru"]  # only incomplete answers
+    assert "п3 ❌" in private["reach"][0][6]

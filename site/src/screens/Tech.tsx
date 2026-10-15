@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { dayMonth, hm, SERVICE_SHORT, TITLES } from '../format'
+import { dayMonth, hm, reachIcon, REGION_TITLES, SERVICE_SHORT, TITLES } from '../format'
 import type { PrivateData, ServiceId } from '../types'
 
 const PAGE = 100
@@ -102,6 +102,30 @@ export default function Tech({ priv, services, pages }: {
               ))}
             </tbody>
           </table>
+        ) : <div className="small muted">Не было.</div>}
+      </section>
+
+      <section className="section card">
+        <h2>Когда сайты банка открывались не везде</h2>
+        <p className="small muted">За 30 дней: проверки, где ответили не все точки, и что ответила каждая.</p>
+        {(priv.reach ?? []).filter((r) => services.includes(r[1])).length ? (
+          <div className="table-wrap">
+            <table>
+              <tbody>
+                {(priv.reach ?? []).filter((r) => services.includes(r[1])).slice(0, 300)
+                  .map(([ts, svc, host, region, up, total, details]) => (
+                    <tr key={ts + host + region}>
+                      <td className="num">{when(ts)}</td>
+                      <td><a className="ext-link" href={`https://${host}/`} target="_blank" rel="noreferrer">{host} ↗</a>
+                        {' · '}{SERVICE_SHORT[svc]}</td>
+                      <td>{REGION_TITLES[region]}</td>
+                      <td>{reachIcon(up, total)} {up} из {total}</td>
+                      <td className="dim">{details}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         ) : <div className="small muted">Не было.</div>}
       </section>
 

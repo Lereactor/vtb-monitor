@@ -9,6 +9,8 @@ from monitor.sources.base import ERROR, OK, OUTAGE, SourceResult
 from monitor.sources.telegram_channel import Post
 from tests.fakes import FakeResp, FakeSession
 
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
+
 NOW = datetime(2026, 10, 4, 11, 50, tzinfo=timezone.utc)  # 14:50 MSK
 
 
@@ -184,3 +186,26 @@ def test_dispatch_github_posts_messages_as_json_input():
 def test_dispatch_github_failure_raises():
     with pytest.raises(RuntimeError, match="401"):
         notifier.dispatch_github("bad", "me/repo", ["x"], FakeSession(FakeResp(401, "Bad credentials")))
+
+
+def test_official_post_about_business_is_tagged():
+    text = notifier.official_post(Post(14, "Сбой в интернет-банке для бизнеса", "outage"))
+    assert text.startswith("📢 ВТБ официально сообщает о проблемах (Бизнес)")
+    assert "(Бизнес)" not in notifier.official_post(Post(15, "Наблюдаются затруднения", "outage"))
+
+
+def test_site_availability_lines():
+    svc = {"sites": {"db.vtb.ru": {"ru": [4, 4], "world": [2, 4]}, "vtbbo.ru": {"ru": [0, 1]}}}
+    assert notifier.sites_line(svc) == ("Сайты открываются: db.vtb.ru ✅ Россия 4/4, ⚠️ мир 2/4; "
+                                        "vtbbo.ru ❌ Россия 0/1.")
+    assert notifier.sites_line({"sites": {}}) == ""
+
+
+def test_heartbeat_shows_site_availability():
+    state = {"services": {"invest": {"sources": {"downradar": src(OK)}, "incident": None,
+                                     "sites": {"invest.vtb.ru": {"ru": [4, 4], "world": [4, 4]}}}}}
+    assert notifier.heartbeat(state) == (
+        "☀️ Оповещатель ВТБ работает, проверяет каждые 5 минут.\n\n"
+        "Проверки:\nВТБ Мои Инвестиции: ✅ DownRadar\n\n"
+        "ВТБ Мои Инвестиции: сайты открываются: invest.vtb.ru ✅ Россия 4/4, ✅ мир 4/4.\n\n"
+        "Сбоев сейчас нет.")

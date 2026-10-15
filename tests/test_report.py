@@ -7,6 +7,8 @@ from monitor import analytics, history
 from monitor.sources.base import ERROR, OK, OUTAGE, SourceResult
 from monitor.state import Event
 
+pytestmark = pytest.mark.usefixtures("legacy_vtb")
+
 NOW = datetime(2026, 10, 15, 9, 0, tzinfo=timezone.utc)  # Thu 12:00 MSK
 
 
@@ -51,7 +53,7 @@ def test_duration_text():
 
 def test_keys_cover_every_period_and_service(db):
     report = analytics.report(db, NOW)
-    assert set(report) == {f"{p}|{s}" for p in ("24h", "7d", "30d", "all") for s in ("all", "vtb", "invest")}
+    assert set(report) == {f"{p}|{s}" for p in ("24h", "7d", "30d", "all") for s in ("all", "vtb", "business", "invest")}
 
 
 def test_kpi_counts_and_clips_to_the_period(db):
@@ -123,7 +125,7 @@ def test_summary_with_incidents(db):
     db.commit()
     text = analytics.report(db, NOW)["7d|all"]["summary"]
     assert text == (
-        "За 7 дней: 2 сбоя ВТБ (35 мин), 0 — Мои Инвестиции. "
+        "За 7 дней: 2 сбоя ВТБ (35 мин), 0 — Бизнес-онлайн, 0 — Мои Инвестиции. "
         "Самый длинный — ср 14.10 в 15:25, 20 мин. "
         "Банк подтвердил 1 из 2, в среднем через 12 мин после начала сбоя. "
         "Первым обычно срабатывает DETECTOR404. "
@@ -149,3 +151,41 @@ def test_period_starts_at_the_first_check(tmp_path):
     block = analytics.report(db, NOW)["7d|vtb"]
     assert [d["date"] for d in block["per_day"]] == ["2026-10-13", "2026-10-14", "2026-10-15"]
     assert block["kpi"]["uptime"] == 1.0
+
+
+def reach(db, when, host, region, up, total, service="business"):
+    from monitor.availability import Point, Reach
+    r = Reach(host, region, [Point(str(i), i < up) for i in range(total)])
+    history.record_run(db, when, {}, [], {service: {host: {region: r}}})
+
+
+def test_site_availability_per_region(db):
+    for minutes in (10, 20, 30, 40):
+        reach(db, at(-1) + timedelta(minutes=minutes), "db.vtb.ru", "ru", 4, 4)
+    reach(db, at(-1), "db.vtb.ru", "world", 0, 4)
+    reach(db, at(-1) + timedelta(minutes=5), "db.vtb.ru", "world", 2, 4)
+    reach(db, at(-1) + timedelta(minutes=10), "db.vtb.ru", "world", 0, 1)  # one point is not «dark»
+    block = analytics.report(db, NOW)["24h|business"]
+    row = next(r for r in block["sites"] if r["host"] == "db.vtb.ru")
+    assert row["ru"] == {"share": 1.0, "dark_minutes": 0, "checks": 4}
+    assert row["world"] == {"share": round(2 / 9, 4), "dark_minutes": 5, "checks": 3}
+    assert "db.vtb.ru не открывался из-за рубежа 5 мин." in block["summary"]
+    assert [r["host"] for r in block["sites"]] == ["db.vtb.ru", "vtbbo.ru"]
+
+
+def test_posts_match_the_service_they_name(db):
+    incident(db, at(-3), 15, ["downradar"], service="business")
+    incident(db, at(-6), 15, ["downradar"], service="invest")
+    for post_id, hours, text in ((1, -3, "Сбой в ВТБ Мои Инвестиции"), (2, -6, "Затруднения у клиентов малого бизнеса")):
+        db.execute("INSERT INTO posts VALUES (?, ?, 'outage', ?, 'u')", (post_id, history.iso(at(hours)), text))
+    db.execute("INSERT INTO posts VALUES (3, ?, 'outage', 'Сбой в работе банка', 'u')",
+               (history.iso(at(-6) + timedelta(minutes=1)),))
+    db.commit()
+    found = {i.service: i.post and i.post["id"] for i in analytics.incidents(db, NOW)}
+    assert found == {"business": None, "invest": 3}  # a general post matches any service
+
+
+def test_retired_service_is_not_shown(db):
+    from monitor.services import SERVICES
+    incident(db, at(-3), 15, ["downradar"], service="retired")
+    assert all(i.service in SERVICES for i in analytics.incidents(db, NOW))

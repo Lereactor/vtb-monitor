@@ -263,6 +263,22 @@ button {
   color: var(--accent);
   text-decoration-color: var(--accent);
 }
+.subhead {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 18px 0 0;
+}
+.reach {
+  margin-top: 8px;
+}
+.reach__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
 .source__count {
   font-size: 22px;
   font-weight: 600;

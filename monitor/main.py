@@ -16,7 +16,7 @@ from pathlib import Path
 
 import requests
 
-from . import export, history, notifier, publish, sitecrypto, posts as official_posts
+from . import availability, export, history, notifier, publish, sitecrypto, posts as official_posts
 from . import state as st
 from .services import CHANNEL_SERVICE, SERVICES
 from .sources import detector404, downradar, downreport, sboyrf, telegram_channel
@@ -26,6 +26,7 @@ SOURCES = {module.NAME: module for module in (detector404, downreport, downradar
 # DownRadar starts timing out on back-to-back requests: space out a second page on the same site
 SAME_SITE_PAUSE = 5
 sleep = time.sleep  # replaced in tests
+check_sites = availability.check  # replaced in tests
 
 
 def _crash_result(name, exc):
@@ -59,6 +60,7 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     state = st.load_state(state_path)
 
     results = {service_id: [] for service_id in SERVICES}
+    reach = {}
     posts = []
     if detectors:
         visited = set()
@@ -70,6 +72,9 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
                 result = _safe_check(name, SOURCES[name].check, session, page)
                 print(f"[{service_id}/{result.source}] {result.status} {result.details}")
                 results[service_id].append(result)
+        reach = _safe_sites(session)
+        for service_id, hosts in reach.items():
+            st.set_sites(state, service_id, hosts)
     if channel:
         tg_result, posts, last_id = _safe_telegram(state["telegram_last_id"], session)
         print(f"[{tg_result.source}] {tg_result.status} {tg_result.details}")
@@ -96,11 +101,27 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     if history_path:
         sent = [st.Event("message_sent", "", "", message) for message in messages]
         checked = {service_id: rs for service_id, rs in results.items() if rs}
-        _after_run(history_path, now, checked, events + sent, state)
+        _after_run(history_path, now, checked, events + sent, state, reach)
     return messages
 
 
-def _after_run(history_path, now, results, events, state):
+def _safe_sites(session):
+    """{service_id: {host: {region: Reach}}}: an extra indicator, so a failure only loses it."""
+    try:
+        by_host = check_sites([h for s in SERVICES.values() for h in s.sites], session)
+    except Exception as exc:  # noqa: BLE001
+        print(f"availability: {exc.__class__.__name__}: {exc}")
+        return {}
+    reach = {}
+    for service_id, service in SERVICES.items():
+        reach[service_id] = {host: by_host[host] for host in service.sites if host in by_host}
+        for host, regions in reach[service_id].items():
+            for r in (r for r in regions.values() if r.total):
+                print(f"[{service_id}/{host}] {r.region} {r.up}/{r.total} {r.details()}")
+    return reach
+
+
+def _after_run(history_path, now, results, events, state, reach=None):
     """History and the site are extras: never let them break alerting."""
     try:
         db = history.connect(history_path)
@@ -109,7 +130,7 @@ def _after_run(history_path, now, results, events, state):
         return
     try:
         try:
-            history.record_run(db, now, results, events)
+            history.record_run(db, now, results, events, reach)
             history.roll_up(db, now)
             token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPO")
             if token and repo:

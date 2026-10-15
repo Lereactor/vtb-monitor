@@ -99,3 +99,11 @@ def test_check_fetches_given_page():
     session = FakeSession(FakeResp(200, BROKER_HTML))
     downradar.check(session, "broker.vtb.ru")
     assert session.calls[0][1] == "https://downradar.ru/ne-rabotaet/broker.vtb.ru"
+
+
+def test_business_page_alerts_on_fewer_complaints():
+    # db.vtb.ru gets a few complaints a day: 3 in an hour is already unusual there
+    html = BROKER_HTML.replace("Broker.vtb.ru", "Db.vtb.ru").replace("broker.vtb.ru", "db.vtb.ru")
+    html = html.replace("Статус Db.vtb.ru : нет проблем", "Статус Db.vtb.ru : есть проблемы")
+    assert downradar.parse(with_hour(html, 2), "db.vtb.ru").status == OK
+    assert downradar.parse(with_hour(html, 3), "db.vtb.ru").status == OUTAGE

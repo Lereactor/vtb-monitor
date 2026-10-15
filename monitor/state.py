@@ -43,7 +43,8 @@ def new_state():
 
 
 def new_service_state():
-    return {"sources": {}, "incident": None, "recovery_streak": 0}
+    # sites: {host: {region: [up, total]}} from the latest availability check, for the messages
+    return {"sources": {}, "incident": None, "recovery_streak": 0, "sites": {}}
 
 
 def load_state(path):
@@ -67,7 +68,10 @@ def load_state(path):
     if not isinstance(state["services"], dict):
         state["services"] = {}
     for service_id in list(state["services"]):
-        service(state, service_id)
+        if service_id in SERVICES:
+            service(state, service_id)
+        else:  # a service no longer monitored (ВТБ itself since 15.10.2026)
+            del state["services"][service_id]
     return state
 
 
@@ -75,8 +79,9 @@ def service(state, service_id):
     """The service's entry, created or repaired as needed."""
     existing = state["services"].get(service_id)
     svc = {**new_service_state(), **(existing if isinstance(existing, dict) else {})}
-    if not isinstance(svc["sources"], dict):
-        svc["sources"] = {}
+    for key in ("sources", "sites"):
+        if not isinstance(svc[key], dict):
+            svc[key] = {}
     incident = svc["incident"]
     if not (isinstance(incident, dict) and "started_at" in incident
             and isinstance(incident.get("sources"), list)):
@@ -172,6 +177,13 @@ def process(state, service_id, results, now, events=None):
             svc["incident"] = None
             svc["recovery_streak"] = 0
     return messages
+
+
+def set_sites(state, service_id, reach):
+    """reach: {host: {region: availability.Reach}}; regions with no answers are left out."""
+    service(state, service_id)["sites"] = {
+        host: {region: [r.up, r.total] for region, r in regions.items() if r.total}
+        for host, regions in reach.items()}
 
 
 def heartbeat_due(state, now):

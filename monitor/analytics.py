@@ -5,13 +5,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from . import history
-from .notifier import INVEST_RE, MSK, TITLES
+from .notifier import BUSINESS_RE, INVEST_RE, MSK, TITLES
 from .services import SERVICES
 
 PERIODS = {"24h": 1, "7d": 7, "30d": 30, "all": None}
-SERVICE_FILTERS = ("all", *SERVICES)
 PERIOD_LABELS = {"24h": "За сутки", "7d": "За 7 дней", "30d": "За 30 дней", "all": "За всё время наблюдений"}
-SHORT_TITLES = {"vtb": "ВТБ", "invest": "Мои Инвестиции"}
+SHORT_TITLES = {"vtb": "ВТБ", "business": "Бизнес-онлайн", "invest": "Мои Инвестиции"}
 WEEKDAYS = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
 ON_WEEKDAYS = ("по понедельникам", "по вторникам", "по средам", "по четвергам", "по пятницам",
                "по субботам", "по воскресеньям")
@@ -35,15 +34,19 @@ class Incident:
         return int(((self.end or now) - self.start).total_seconds() // 60)
 
 
-def _post_service(text):
-    return "invest" if INVEST_RE.search(text) else "vtb"
+def _post_matches(text, service_id):
+    """A post naming a service matches only it; a general one («сбой в работе банка») matches any."""
+    named = [sid for sid, pattern in (("invest", INVEST_RE), ("business", BUSINESS_RE)) if pattern.search(text)]
+    return service_id in named or not named
 
 
 def incidents(db, now):
-    """All incidents, oldest first, rebuilt from the incident events."""
+    """All incidents of the monitored services, oldest first, rebuilt from the incident events."""
     found, open_ = [], {}
     for ts, kind, service, source in db.execute(
             "SELECT ts, kind, service, source FROM events WHERE kind LIKE 'incident_%' ORDER BY ts, rowid"):
+        if service not in SERVICES:
+            continue
         when = datetime.fromisoformat(ts)
         if kind == "incident_started":
             open_[service] = Incident(service, when, sources=[s for s in source.split(",") if s])
@@ -61,7 +64,7 @@ def incidents(db, now):
         for post_id, ts, kind, text, url in posts:
             when = datetime.fromisoformat(ts)
             if (incident.start - POST_BEFORE <= when <= incident.start + POST_AFTER
-                    and _post_service(text) == incident.service):
+                    and _post_matches(text, incident.service)):
                 incident.post = {"id": post_id, "ts": ts, "text": text, "url": url}
                 break
     return found
@@ -83,10 +86,14 @@ def duration(minutes):
     return f"{hours} ч" if not rest else f"{hours} ч {rest:02d} мин"
 
 
-def _period_start(db, now, days):
-    """The period, but never before the first check: days before the history are not «calm days»."""
-    first = db.execute("SELECT min(ts) FROM (SELECT min(ts) AS ts FROM checks "
-                       "UNION ALL SELECT min(hour) || ':00:00+00:00' FROM hourly)").fetchone()[0]
+def _period_start(db, now, days, services):
+    """The period, but never before the services' first check: days before are not «calm days»."""
+    marks = ",".join("?" * len(services))
+    first = db.execute(f"SELECT min(ts) FROM (SELECT min(ts) AS ts FROM checks WHERE service IN ({marks}) "
+                       f"UNION ALL SELECT min(hour) || ':00:00+00:00' FROM hourly WHERE service IN ({marks}))",
+                       (*services, *services)).fetchone()[0]
+    if first is None:  # nothing checked yet for these services
+        first = db.execute("SELECT min(ts) FROM checks").fetchone()[0]
     first = min(datetime.fromisoformat(first), now) if first else now
     return max(now - timedelta(days=days), first) if days else first
 
@@ -163,6 +170,25 @@ def _monitors(db, services, incs, start):
     return rows
 
 
+def _sites(db, services, start):
+    """Per bank site and region: share of check points that got an answer, and minutes when
+    none of at least two did (the site did not open from anywhere in that region)."""
+    rows = []
+    for service_id in services:
+        for host in SERVICES[service_id].sites:
+            row = {"service": service_id, "host": host}
+            for region in ("ru", "world"):
+                up, total, dark, checks = db.execute(
+                    "SELECT coalesce(sum(up), 0), coalesce(sum(total), 0), "
+                    "coalesce(sum(up = 0 AND total >= 2), 0), count(*) "
+                    "FROM reach WHERE service = ? AND host = ? AND region = ? AND ts >= ?",
+                    (service_id, host, region, history.iso(start))).fetchone()
+                row[region] = {"share": round(up / total, 4) if total else None,
+                               "dark_minutes": dark * RUN_MINUTES, "checks": checks}
+            rows.append(row)
+    return rows
+
+
 def _kpi(services, incs, start, now):
     period = max((now - start).total_seconds() / 60, 1)
     leads = [int((datetime.fromisoformat(i.post["ts"]) - i.start).total_seconds() // 60)
@@ -189,7 +215,7 @@ def _per_day(incs, start, now):
     return list(days.values())
 
 
-def _summary(period, services, incs, kpi, monitors, heatmap, start, now):
+def _summary(period, services, incs, kpi, monitors, heatmap, start, now, sites=()):
     """Plain-language summary built from the same numbers. No LLM."""
     label = PERIOD_LABELS[period]
     parts = []
@@ -227,6 +253,12 @@ def _summary(period, services, incs, kpi, monitors, heatmap, start, now):
     for title, n in broken.items():
         if n:
             parts.append(f"{title} не отвечал {n} {plural(n, 'раз', 'раза', 'раз')}.")
+    for row in sites:
+        dark = [f"{where} {duration(row[region]['dark_minutes'])}"
+                for region, where in (("ru", "из России"), ("world", "из-за рубежа"))
+                if row[region]["dark_minutes"]]
+        if dark:
+            parts.append(f"{row['host']} не открывался {' и '.join(dark)}.")
     cells = [(value, day, hour) for day, row in enumerate(heatmap)
              for hour, value in enumerate(row) if value and value >= PEAK_MIN]
     if cells:
@@ -240,17 +272,18 @@ def report(db, now):
     every = incidents(db, now)
     out = {}
     for period, days in PERIODS.items():
-        start = _period_start(db, now, days)
-        for service_filter in SERVICE_FILTERS:
+        for service_filter in ("all", *SERVICES):
             services = list(SERVICES) if service_filter == "all" else [service_filter]
+            start = _period_start(db, now, days, services)
             incs = [i for i in every if i.service in services and (i.end or now) > start and i.start <= now]
             kpi = _kpi(services, incs, start, now)
             hourly = _hourly_counts(db, start, services)
             heatmap = _heatmap(hourly)
             monitors = _monitors(db, services, incs, start)
+            sites = _sites(db, services, start)
             out[f"{period}|{service_filter}"] = {
                 "kpi": kpi, "per_day": _per_day(incs, start, now),
                 "complaints": _complaints(hourly, daily=days is None),
-                "heatmap": heatmap, "monitors": monitors,
-                "summary": _summary(period, services, incs, kpi, monitors, heatmap, start, now)}
+                "heatmap": heatmap, "monitors": monitors, "sites": sites,
+                "summary": _summary(period, services, incs, kpi, monitors, heatmap, start, now, sites)}
     return out

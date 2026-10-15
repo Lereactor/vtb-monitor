@@ -16,6 +16,7 @@ from datetime import datetime
 
 from . import history
 from . import state as st
+from .services import SERVICES
 from .sources import detector404
 from .sources.base import OK, OUTAGE, SourceResult
 
@@ -48,7 +49,8 @@ def _replay(db):
     for ts in sorted(runs):
         when, events = datetime.fromisoformat(ts), []
         for service_id, results in runs[ts].items():
-            st.process(state, service_id, results, when, events)
+            if service_id in SERVICES:  # retired services keep their old incidents
+                st.process(state, service_id, results, when, events)
         if events:
             out.append((when, events))
     last = datetime.fromisoformat(max(runs)) if runs else None
@@ -59,7 +61,8 @@ def recompute(db, live_state):
     """live_state: the alerting state.json, so open incidents match what the live runs will close."""
     _reread_checks(db)
     replayed, state, last = _replay(db)
-    db.execute(f"DELETE FROM events WHERE kind IN ({','.join('?' * len(REPLAYED))})", REPLAYED)
+    db.execute(f"DELETE FROM events WHERE kind IN ({','.join('?' * len(REPLAYED))}) "
+               f"AND service IN ({','.join('?' * len(SERVICES))})", (*REPLAYED, *SERVICES))
     for when, events in replayed:
         history.record_run(db, when, {}, events)
     for service_id in set(state["services"]) | set(live_state["services"]):
