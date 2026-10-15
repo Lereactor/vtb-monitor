@@ -84,11 +84,11 @@ def duration(minutes):
 
 
 def _period_start(db, now, days):
-    if days:
-        return now - timedelta(days=days)
+    """The period, but never before the first check: days before the history are not «calm days»."""
     first = db.execute("SELECT min(ts) FROM (SELECT min(ts) AS ts FROM checks "
                        "UNION ALL SELECT min(hour) || ':00:00+00:00' FROM hourly)").fetchone()[0]
-    return min(datetime.fromisoformat(first), now) if first else now
+    first = min(datetime.fromisoformat(first), now) if first else now
+    return max(now - timedelta(days=days), first) if days else first
 
 
 def _clipped(incident, start, now):

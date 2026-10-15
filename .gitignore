@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+site/node_modules/
+site/dist/
+site/dist-site/
+site/public/sample/

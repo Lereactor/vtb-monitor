@@ -140,3 +140,12 @@ def test_summary_for_one_service(db):
 def test_summary_skips_peak_time_when_complaints_are_few(db):
     check(db, at(-2), "downradar", count=2, service="invest")
     assert "Больше всего жалоб" not in analytics.report(db, NOW)["24h|invest"]["summary"]
+
+
+def test_period_starts_at_the_first_check(tmp_path):
+    # days before the history began are not «days without incidents»
+    db = history.connect(tmp_path / "h.db")
+    check(db, at(-24 * 2), "sboyrf", count=1)
+    block = analytics.report(db, NOW)["7d|vtb"]
+    assert [d["date"] for d in block["per_day"]] == ["2026-10-13", "2026-10-14", "2026-10-15"]
+    assert block["kpi"]["uptime"] == 1.0
