@@ -6,6 +6,7 @@ The VPS runs `--only detectors --via github` (Telegram is blocked there, so a
 GitHub workflow relays the messages); GitHub Actions runs `--only channel`.
 """
 import argparse
+import base64
 import os
 import sys
 import time
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import requests
 
-from . import history, notifier, posts as official_posts
+from . import export, history, notifier, publish, sitecrypto, posts as official_posts
 from . import state as st
 from .services import CHANNEL_SERVICE, SERVICES
 from .sources import detector404, downradar, downreport, sboyrf, telegram_channel
@@ -94,24 +95,44 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     if history_path:
         sent = [st.Event("message_sent", "", "", message) for message in messages]
         checked = {service_id: rs for service_id, rs in results.items() if rs}
-        _after_run(history_path, now, checked, events + sent)
+        _after_run(history_path, now, checked, events + sent, state)
     return messages
 
 
-def _after_run(history_path, now, results, events):
+def _after_run(history_path, now, results, events, state):
     """History and the site are extras: never let them break alerting."""
     try:
         db = history.connect(history_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"history: {exc.__class__.__name__}: {exc}")
+        return
+    try:
         try:
             history.record_run(db, now, results, events)
             history.roll_up(db, now)
             token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPO")
             if token and repo:
                 official_posts.import_from_github(db, token, repo)
-        finally:
-            db.close()
-    except Exception as exc:  # noqa: BLE001
-        print(f"history: {exc.__class__.__name__}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"history: {exc.__class__.__name__}: {exc}")
+        try:
+            _publish_site(db, state, now)
+        except Exception as exc:  # noqa: BLE001
+            print(f"site: {exc.__class__.__name__}: {exc}")
+    finally:
+        db.close()
+
+
+def _publish_site(db, state, now):
+    """Only where the site is configured (the VPS): SITE_REMOTE, SITE_KEY, SITE_SALT."""
+    env = os.environ
+    if not all(env.get(name) for name in ("SITE_REMOTE", "SITE_KEY", "SITE_SALT")):
+        return
+    public, private = export.build(db, state, now)
+    key, salt = base64.b64decode(env["SITE_KEY"]), base64.b64decode(env["SITE_SALT"])
+    blob = sitecrypto.encrypt_json(private, key, salt, int(env.get("SITE_ITER", sitecrypto.ITERATIONS)))
+    publish.publish(env.get("SITE_WORK_DIR", "/var/lib/vtb-monitor/site-data"), env["SITE_REMOTE"],
+                    public, blob, env.get("SITE_DEPLOY_KEY"))
 
 
 def _deliverer(via):

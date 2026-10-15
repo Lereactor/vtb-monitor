@@ -198,3 +198,38 @@ def test_history_imports_posts_when_github_is_configured(tmp_path, sources, monk
     main.run(tmp_path / "state.json", lambda messages: None, now=NOW, channel=False,
              history_path=tmp_path / "h.db")
     assert calls == [("tok", "me/repo")]
+
+
+def site_env(monkeypatch, tmp_path, remote):
+    import base64
+    from monitor import sitecrypto
+    salt = b"1" * 16
+    monkeypatch.setenv("SITE_REMOTE", str(remote))
+    monkeypatch.setenv("SITE_KEY", base64.b64encode(sitecrypto.derive_key("pw", salt, 1000)).decode())
+    monkeypatch.setenv("SITE_SALT", base64.b64encode(salt).decode())
+    monkeypatch.setenv("SITE_ITER", "1000")
+    monkeypatch.setenv("SITE_WORK_DIR", str(tmp_path / "site-data"))
+
+
+def test_site_is_published_after_the_run(tmp_path, sources, monkeypatch):
+    import subprocess
+    from monitor import sitecrypto
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    site_env(monkeypatch, tmp_path, remote)
+    main.run(tmp_path / "state.json", lambda messages: None, now=NOW, channel=False,
+             history_path=tmp_path / "h.db")
+    show = lambda name: subprocess.run(["git", "--git-dir", str(remote), "show", f"data:{name}"],
+                                       check=True, capture_output=True, encoding="utf-8").stdout
+    public = json.loads(show("public.json"))
+    assert public["now"]["vtb"]["total"] == 4
+    private = sitecrypto.decrypt_json(json.loads(show("private.enc")), "pw")
+    assert len(private["checks"]) == 7
+
+
+def test_site_failure_does_not_block_alerts(tmp_path, sources, monkeypatch, capsys):
+    site_env(monkeypatch, tmp_path, tmp_path / "no-such-remote.git")
+    sent = []
+    main.run(tmp_path / "state.json", sent.extend, now=NOW, channel=False, history_path=tmp_path / "h.db")
+    assert sent and "site: CalledProcessError" in capsys.readouterr().out
+    assert history.connect(tmp_path / "h.db").execute("SELECT count(*) FROM checks").fetchone() == (7,)
