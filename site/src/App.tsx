@@ -134,7 +134,7 @@ export default function App() {
         {data && tab === 'now' && <Now data={data} services={filter} />}
         {data && tab === 'incidents' && (
           <Incidents data={data} services={filter} period={view.period} priv={priv}
-                     open={view.open} onOpen={(open) => update({ open })} />
+                     open={view.open} onOpen={(open) => update({ open })} pages={pages} />
         )}
         {data && tab === 'analytics' && (
           <Analytics block={data.analytics[`${view.period}|${view.service}`]} period={view.period} service={view.service}

@@ -3,7 +3,19 @@ import { dayMonth, duration, hm, inPeriod, SERVICE_SHORT, TITLES, weekdayDayTime
 import type { Incident, Period, PrivateData, PublicData, ServiceId } from '../types'
 import { seriesColor } from './colors'
 
-function Detail({ incident, data, priv }: { incident: Incident; data: PublicData; priv: PrivateData | null }) {
+// monitor name, as a link to its page when known; clicks don't toggle the row
+function SourceName({ incident, source, pages }: { incident: Incident; source: string; pages: Record<string, string> }) {
+  const url = pages[`${incident.service}/${source}`]
+  const title = TITLES[source] ?? source
+  return url
+    ? <a className="ext-link" href={url} target="_blank" rel="noreferrer" title={`Открыть страницу ${title}`}
+         onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{title} ↗</a>
+    : <>{title}</>
+}
+
+function Detail({ incident, data, priv, pages }: {
+  incident: Incident; data: PublicData; priv: PrivateData | null; pages: Record<string, string>
+}) {
   const start = new Date(incident.start).getTime()
   const end = incident.end ? new Date(incident.end).getTime() : Date.now()
   const from = start - 2 * 3600_000
@@ -27,7 +39,7 @@ function Detail({ incident, data, priv }: { incident: Incident; data: PublicData
     <div className="detail">
       <p>
         Порядок срабатывания: {incident.sources.map((s, i) => (
-          <span className="chip" key={s}>{i + 1}. {TITLES[s] ?? s}</span>
+          <span className="chip" key={s}>{i + 1}. <SourceName incident={incident} source={s} pages={pages} /></span>
         ))}
       </p>
       {incident.post && (
@@ -52,13 +64,14 @@ function Detail({ incident, data, priv }: { incident: Incident; data: PublicData
   )
 }
 
-export default function Incidents({ data, services, period, priv, open, onOpen }: {
+export default function Incidents({ data, services, period, priv, open, onOpen, pages }: {
   data: PublicData
   services: ServiceId[]
   period: Period
   priv: PrivateData | null
   open: string | null
   onOpen: (id: string | null) => void
+  pages: Record<string, string>
 }) {
   const list = data.incidents.filter((i) => services.includes(i.service)
     && (inPeriod(i.start, period) || (i.end !== null && inPeriod(i.end, period)) || i.end === null))
@@ -75,7 +88,12 @@ export default function Incidents({ data, services, period, priv, open, onOpen }
           const isOpen = open === id
           return (
             <div key={id}>
-              <button className="incident" onClick={() => onOpen(isOpen ? null : id)} aria-expanded={isOpen}>
+              {/* a div, not a button: the row holds links to the monitors */}
+              <div className="incident" role="button" tabIndex={0} aria-expanded={isOpen}
+                   onClick={() => onOpen(isOpen ? null : id)}
+                   onKeyDown={(e) => {
+                     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(isOpen ? null : id) }
+                   }}>
                 <span className="incident__when">{weekdayDayTime(incident.start)}</span>
                 <span>
                   <strong>{SERVICE_SHORT[incident.service]}</strong>
@@ -85,12 +103,14 @@ export default function Incidents({ data, services, period, priv, open, onOpen }
                 </span>
                 <span className="dim">{incident.end === null ? `${duration(incident.minutes)} и идёт` : duration(incident.minutes)}</span>
                 <span className="incident__meta">
-                  {incident.sources.map((s) => TITLES[s] ?? s).join(' → ')}
+                  {incident.sources.map((s, i) => (
+                    <span key={s}>{i > 0 && ' → '}<SourceName incident={incident} source={s} pages={pages} /></span>
+                  ))}
                   {incident.peak ? ` · пик ${incident.peak} жалоб в час` : null}
                   {incident.end && ` · до ${dayMonth(incident.end) === dayMonth(incident.start) ? '' : dayMonth(incident.end) + ' '}${hm(incident.end)}`}
                 </span>
-              </button>
-              {isOpen && <Detail incident={incident} data={data} priv={priv} />}
+              </div>
+              {isOpen && <Detail incident={incident} data={data} priv={priv} pages={pages} />}
             </div>
           )
         })}
