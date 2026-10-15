@@ -15,9 +15,11 @@ function Tile({ label, value, note }: { label: string; value: string; note?: str
   )
 }
 
-export default function Analytics({ block, period, service }: {
+export default function Analytics({ block, period, service, pages }: {
   block: Block
   period: Period
+  /** "service/source" -> the monitor's page */
+  pages: Record<string, string>
   service: ServiceFilter
 }) {
   const { kpi } = block
@@ -90,7 +92,12 @@ export default function Analytics({ block, period, service }: {
             <tbody>
               {block.monitors.map((m) => (
                 <tr key={m.service + m.source}>
-                  <td>{m.title}</td>
+                  <td>
+                    {pages[`${m.service}/${m.source}`]
+                      ? <a className="ext-link" href={pages[`${m.service}/${m.source}`]} target="_blank" rel="noreferrer"
+                           title={`Открыть страницу ${m.title}`}>{m.title} ↗</a>
+                      : m.title}
+                  </td>
                   {service === 'all' && <td>{SERVICE_SHORT[m.service]}</td>}
                   <td className="num">{m.alarms}</td>
                   <td className="num">{m.first}</td>

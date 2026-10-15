@@ -89,6 +89,8 @@ export default function App() {
   const age = data ? ageMinutes(data.generated_at) : 0
   const tab = view.tab === 'tech' && !priv ? 'now' : view.tab
   const filter = services(view.service)
+  const pages = data ? Object.fromEntries(Object.entries(data.services).flatMap(([sid, s]) =>
+    s.sources.filter((src) => src.url).map((src) => [`${sid}/${src.id}`, src.url as string]))) : {}
 
   return (
     <>
@@ -135,7 +137,8 @@ export default function App() {
                      open={view.open} onOpen={(open) => update({ open })} />
         )}
         {data && tab === 'analytics' && (
-          <Analytics block={data.analytics[`${view.period}|${view.service}`]} period={view.period} service={view.service} />
+          <Analytics block={data.analytics[`${view.period}|${view.service}`]} period={view.period} service={view.service}
+                     pages={pages} />
         )}
         {priv && tab === 'tech' && <Tech priv={priv} services={filter} />}
       </main>
