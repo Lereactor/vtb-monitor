@@ -1,9 +1,10 @@
 {
   "last_heartbeat": "2026-10-15",
   "services": {
-    "vtb": {
+    "business": {
       "incident": null,
       "recovery_streak": 0,
+      "sites": {},
       "sources": {
         "telegram": {
           "confirmed": "OK",
