@@ -21,6 +21,11 @@ on:
         required: false
         default: ""
         type: string
+      clear:
+        description: "First delete every message the bot can delete in the chat"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -28,8 +33,52 @@ permissions:
 jobs:
   send:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     steps:
+      # Telegram lets a bot delete only some messages (in groups: its own and, as an admin,
+      # others' — mostly not older than 48 h); the rest stay and are counted in the log.
+      - name: Clear the chat
+        if: inputs.clear
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        shell: python
+        run: |
+          import json, os, urllib.error, urllib.request
+
+          def call(method, **params):
+              url = f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/{method}"
+              body = json.dumps({"chat_id": os.environ["TELEGRAM_CHAT_ID"], **params}).encode()
+              request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
+              try:
+                  return json.load(urllib.request.urlopen(request, timeout=30))
+              except urllib.error.HTTPError as exc:
+                  return json.loads(exc.read() or b"{}")
+
+          chat = call("getChat")["result"]
+          me = call("getChatMember", user_id=int(os.environ["TELEGRAM_BOT_TOKEN"].split(":")[0]))
+          print("chat type:", chat["type"], "| bot:", me.get("result", {}).get("status"),
+                "| can delete others:", me.get("result", {}).get("can_delete_messages"))
+          last = call("sendMessage", text="🧹 Очищаю чат…")["result"]["message_id"]
+          print("last message id:", last)
+          left = []
+          for start in range(1, last + 1, 100):
+              ids = list(range(start, min(start + 100, last + 1)))
+              answer = call("deleteMessages", message_ids=ids)
+              if not answer.get("ok"):
+                  print(f"{start}-{ids[-1]}: {answer.get('description')}")
+                  left.append(start)
+          # a batch fails as a whole when one of its messages can't be deleted: retry those one by one
+          kept = 0
+          for start in left:
+              for message_id in range(start, min(start + 100, last + 1)):
+                  answer = call("deleteMessage", message_id=message_id)
+                  if not answer.get("ok") and "not found" not in answer.get("description", ""):
+                      kept += 1
+          print("could not delete:", kept)
+          if call("deleteMessage", message_id=last).get("ok"):
+              print("probe message deleted")
+
       - name: Send to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
