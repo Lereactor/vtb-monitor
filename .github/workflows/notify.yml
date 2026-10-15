@@ -2,15 +2,28 @@ name: notify
 
 # Relay for the VPS: Telegram is blocked there, GitHub is not.
 # The VPS calls the workflow_dispatch API with a JSON array of message texts.
+# By hand it can also send a file from the repo (e.g. the PDF памятка) as a document.
 on:
   workflow_dispatch:
     inputs:
       messages:
         description: "JSON array of message texts"
-        required: true
+        required: false
+        default: "[]"
+        type: string
+      document:
+        description: "Path of a file in the repo to send as a document (optional)"
+        required: false
+        default: ""
+        type: string
+      caption:
+        description: "Caption for the document (optional)"
+        required: false
+        default: ""
         type: string
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   send:
@@ -28,7 +41,7 @@ jobs:
 
           url = f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage"
           failed = 0
-          for text in json.loads(os.environ["MESSAGES"]):
+          for text in json.loads(os.environ["MESSAGES"] or "[]"):
               body = json.dumps({"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": text,
                                  "disable_web_page_preview": True}).encode()
               request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
@@ -39,3 +52,18 @@ jobs:
                   print(f"Telegram API: HTTP {exc.code} {exc.read()[:200]!r}")
           if failed:
               raise SystemExit(f"{failed} message(s) not delivered")
+
+      - uses: actions/checkout@v4
+        if: inputs.document != ''
+
+      - name: Send the document
+        if: inputs.document != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DOCUMENT: ${{ inputs.document }}
+          CAPTION: ${{ inputs.caption }}
+        run: |
+          curl -sS --fail-with-body -o /dev/null \
+            -F chat_id="$TELEGRAM_CHAT_ID" -F document=@"$DOCUMENT" -F caption="$CAPTION" \
+            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"

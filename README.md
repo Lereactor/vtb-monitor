@@ -80,6 +80,8 @@ VPS 4VPS (Новосибирск, 193.233.84.69)
 3. **Секреты:** Settings → Secrets and variables → Actions → New repository secret:
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
 4. **Проверка:** Actions → vtb-monitor → Run workflow → галка «Отправить тестовое сообщение».
+5. **Файл в чат** (например, памятка `docs/ВТБ-оповещатель-кратко.pdf`, собирается
+   `python docs/source/onepager.py <файл.pdf>`): Actions → notify → Run workflow → путь в поле `document`.
 
 ## Сайт
 
