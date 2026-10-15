@@ -116,9 +116,15 @@ def official_post(post):
     return f"📢 ВТБ официально сообщает {what}{about}\n«{text}»\n{post.url}"
 
 
-def heartbeat(state):
-    return "\n".join(["☀️ Оповещатель ВТБ работает, проверяет каждые 5 минут.",
-                      "", "Проверки:", *_checks(state), "", _outage_line(state)])
+LOW_DISK_MB = 200
+
+
+def heartbeat(state, free_mb=None):
+    lines = ["☀️ Оповещатель ВТБ работает, проверяет каждые 5 минут.",
+             "", "Проверки:", *_checks(state), "", _outage_line(state)]
+    if free_mb is not None and free_mb < LOW_DISK_MB:
+        lines += ["", f"⚠️ На сервере осталось {free_mb} МБ места."]
+    return "\n".join(lines)
 
 
 MAX_TEXT = 4000  # Telegram's limit is 4096

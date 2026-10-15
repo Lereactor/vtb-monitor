@@ -8,6 +8,7 @@ GitHub workflow relays the messages); GitHub Actions runs `--only channel`.
 import argparse
 import base64
 import os
+import shutil
 import sys
 import time
 from datetime import datetime, timezone
@@ -84,7 +85,7 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     if source_events:
         messages.append(notifier.sources_changed(state, source_events))
     if st.heartbeat_due(state, now):
-        messages.append(notifier.heartbeat(state))
+        messages.append(notifier.heartbeat(state, _free_mb(state_path)))
         state["last_heartbeat"] = now.astimezone(st.MSK).date().isoformat()
 
     if messages:
@@ -121,6 +122,13 @@ def _after_run(history_path, now, results, events, state):
             print(f"site: {exc.__class__.__name__}: {exc}")
     finally:
         db.close()
+
+
+def _free_mb(path):
+    try:
+        return shutil.disk_usage(Path(path).resolve().parent).free // 2**20
+    except OSError:
+        return None
 
 
 def _publish_site(db, state, now):

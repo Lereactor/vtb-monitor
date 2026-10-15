@@ -93,6 +93,13 @@ def test_heartbeat_when_all_is_well():
         "Сбоев сейчас нет.")
 
 
+def test_heartbeat_warns_about_low_disk():
+    state = {"services": {"vtb": {"sources": {"downradar": src(OK)}, "incident": None}}}
+    assert notifier.heartbeat(state, free_mb=150).endswith(
+        "Сбоев сейчас нет.\n\n⚠️ На сервере осталось 150 МБ места.")
+    assert "МБ" not in notifier.heartbeat(state, free_mb=470)
+
+
 def test_heartbeat_names_open_incidents():
     state = {"services": {"vtb": STATE}}
     assert notifier.heartbeat(state) == (

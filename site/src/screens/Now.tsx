@@ -14,12 +14,15 @@ function Banner({ data, service }: { data: PublicData; service: ServiceId }) {
     )
   }
   const seeing = now.incident.sources.length
+  // the incident closes only after RECOVERY_RUNS calm checks in a row (monitor/state.py)
+  const calm = Object.values(now.sources).every((s) => s.status !== 'outage')
   return (
     <div className="banner banner--outage">
       <strong>🔴 {title}: похоже на сбой с {hm(now.incident.start)}</strong>
       <span className="dim">
-        видят сайтов: {seeing} из {now.working}
-        {seeing === 1 && ' — пока один, возможна ложная тревога'}
+        {calm
+          ? 'сайты уже в норме — сбой закроется после двух спокойных проверок подряд'
+          : <>видят сайтов: {seeing} из {now.working}{seeing === 1 && ' — пока один, возможна ложная тревога'}</>}
       </span>
     </div>
   )

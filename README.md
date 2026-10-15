@@ -29,6 +29,8 @@ VPS 4VPS (Новосибирск, 193.233.84.69)
 На VPS: код в `/opt/vtb-monitor` (пользователь `vtbmon`), состояние в `/var/lib/vtb-monitor/state.json`,
 токен GitHub (fine-grained, только этот репозиторий, Actions: read/write) в `/etc/vtb-monitor.env`.
 
+Каждое утро бот пишет, что работает; если на VPS осталось меньше 200 МБ, добавляет предупреждение.
+
 Обновить код на VPS: `sudo -u vtbmon git -C /opt/vtb-monitor pull`.
 Логи: `journalctl -u vtb-monitor -n 50`.
 
@@ -78,6 +80,25 @@ VPS 4VPS (Новосибирск, 193.233.84.69)
 3. **Секреты:** Settings → Secrets and variables → Actions → New repository secret:
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
 4. **Проверка:** Actions → vtb-monitor → Run workflow → галка «Отправить тестовое сообщение».
+
+## Сайт
+
+**https://lereactor.github.io/vtb-monitor-live/**: статус сейчас, лента сбоев, аналитика.
+Раздел «Техника» (все проверки, простои сайтов-мониторов, сообщения в чат) открывается паролем.
+
+- Каждая проверка на VPS пишется в `/var/lib/vtb-monitor/history.db` (SQLite). Из неё собираются
+  `public.json` и зашифрованный `private.enc` (AES-GCM, ключ из пароля через PBKDF2, 600 000
+  итераций). Оба файла уходят force-push'ем в ветку `data` репозитория `Lereactor/vtb-monitor-live`.
+  Браузер читает их с raw.githubusercontent.com и расшифровывает закрытую часть сам.
+- Ошибки истории и сайта только пишутся в лог (`history: …`, `site: …`), оповещения не задерживают.
+- Настройки в `/etc/vtb-monitor.env`: `SITE_REMOTE`, `SITE_DEPLOY_KEY`
+  (`/var/lib/vtb-monitor/site_deploy_key`, ключ развёртывания только для этого репозитория),
+  `SITE_KEY`, `SITE_SALT`, `SITE_ITER`. Пароля на VPS нет, только ключ. Сменить пароль:
+  удалить три строки `SITE_KEY`/`SITE_SALT`/`SITE_ITER` и выполнить
+  `python scripts/derive_site_key.py | ssh root@vps "tr -d '\r' >> /etc/vtb-monitor.env"`.
+- Код сайта в `site/` (React + Vite). Выложить: `cd site && node scripts/build-site.mjs --deploy`.
+  Для разработки: `python scripts/make_sample_data.py --db … --state …`, потом `npm run dev`
+  (пример данных с паролем `test`, в сборку не попадает).
 
 ## Локально
 
