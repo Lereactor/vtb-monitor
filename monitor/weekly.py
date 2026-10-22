@@ -17,7 +17,7 @@ from .notifier import MSK
 SITE = "https://lereactor.github.io/vtb-monitor-live/"
 PAGE = SITE + "#tab=analytics&s=all&p=7d"
 PUBLIC_JSON = "https://raw.githubusercontent.com/Lereactor/vtb-monitor-live/data/public.json"
-WIDTH = 820   # CSS pixels: the site's desktop layout, still readable on a phone
+WIDTH = 1000  # CSS pixels: every table column fits with the wider fonts of the Linux runner
 SCALE = 2
 MAX_CAPTION = 1024  # Telegram's limit for a photo caption
 
