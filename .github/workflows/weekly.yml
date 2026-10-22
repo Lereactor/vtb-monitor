@@ -1,0 +1,37 @@
+name: weekly
+
+# A picture of the site's «Аналитика» tab for 7 days, sent to the chat.
+# Started by the VPS on Monday mornings (GitHub's own cron never started for this repo).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Только сделать картинку (артефакт), в чат не отправлять"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests==2.32.3 playwright==1.48.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Picture and send
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m monitor.weekly ${{ inputs.dry_run && '--dry-run vtb-week.png' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vtb-week
+          path: vtb-week.png
+          if-no-files-found: ignore

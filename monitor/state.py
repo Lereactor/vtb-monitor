@@ -5,6 +5,7 @@ Each monitored service keeps its own sources and incident under state["services"
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from . import notifier
@@ -20,7 +21,16 @@ IMMEDIATE = {"detector404"}  # its complaints flag is rare and has been right ev
 # 100-250 complaints with DownRadar at its usual 0-4, partly deleted by the site later.
 # It can only confirm an outage that another site started, and cannot keep one open.
 CONFIRM_ONLY = {"sboyrf"}
-HEARTBEAT_HOUR_MSK = 9
+HEARTBEAT_HOUR_MSK = 9  # also the hour of the Monday weekly report
+# a bank site alerts when no point in Russia gets an answer this many runs in a row (10 min),
+# with at least this many points answering at all (check-host down leaves only the VPS)
+SITE_DOWN_RUNS = 2
+SITE_UP_RUNS = 2
+SITE_MIN_POINTS = 2
+SITE_ALERT_REGION = "ru"
+# free space on the VPS: warn below the first, all clear above the second
+DISK_LOW_MB = 500
+DISK_OK_MB = 1000
 SOURCE_DEFAULTS = {"last": OK, "confirmed": OK, "outage_streak": 0, "error_streak": 0,
                    "error_reported": False, "details": "", "url": ""}
 SERVICE_KEYS = ("sources", "incident", "recovery_streak")
@@ -31,7 +41,7 @@ class Event:
     """Something that happened in a run: kept in the history and used for messages.
 
     kind: incident_started | incident_confirmed | incident_resolved |
-          source_down | source_back | message_sent
+          source_down | source_back | site_down | site_back | message_sent
     """
     kind: str
     service: str
@@ -40,12 +50,14 @@ class Event:
 
 
 def new_state():
-    return {"services": {}, "telegram_last_id": None, "last_heartbeat": None}
+    return {"services": {}, "telegram_last_id": None, "last_heartbeat": None, "disk_low": False,
+            "last_weekly": None}
 
 
 def new_service_state():
-    # sites: {host: {region: [up, total]}} from the latest availability check, for the messages
-    return {"sources": {}, "incident": None, "recovery_streak": 0, "sites": {}}
+    # sites: {host: {region: [up, total]}} from the latest availability check, for the messages;
+    # site_alerts: {host: {"down": runs, "up": runs, "since": iso of the first failed check, "alerted": bool}}
+    return {"sources": {}, "incident": None, "recovery_streak": 0, "sites": {}, "site_alerts": {}}
 
 
 def load_state(path):
@@ -80,7 +92,7 @@ def service(state, service_id):
     """The service's entry, created or repaired as needed."""
     existing = state["services"].get(service_id)
     svc = {**new_service_state(), **(existing if isinstance(existing, dict) else {})}
-    for key in ("sources", "sites"):
+    for key in ("sources", "sites", "site_alerts"):
         if not isinstance(svc[key], dict):
             svc[key] = {}
     incident = svc["incident"]
@@ -196,3 +208,70 @@ def set_sites(state, service_id, reach):
 def heartbeat_due(state, now):
     local = now.astimezone(MSK)
     return local.hour >= HEARTBEAT_HOUR_MSK and state["last_heartbeat"] != local.date().isoformat()
+
+
+def process_sites(state, service_id, reach, now, events=None):
+    """reach: {host: {region: availability.Reach}} from this run. Returns the messages.
+
+    A site is down when no point in Russia answered SITE_DOWN_RUNS runs in a row, and back
+    after SITE_UP_RUNS runs with an answer. Too few points answering at all says nothing.
+    """
+    events = [] if events is None else events
+    alerts = service(state, service_id)["site_alerts"]
+    messages = []
+    for host, regions in reach.items():
+        home = regions.get(SITE_ALERT_REGION)
+        if home is None or home.total < SITE_MIN_POINTS:
+            continue
+        alert = {"down": 0, "up": 0, "since": None, "alerted": False, **alerts.get(host, {})}
+        alerts[host] = alert
+        if home.up == 0:
+            alert["up"] = 0
+            alert["down"] = min(alert["down"] + 1, SITE_DOWN_RUNS)
+            alert["since"] = alert["since"] or now.isoformat()
+            if alert["down"] >= SITE_DOWN_RUNS and not alert["alerted"]:
+                alert["alerted"] = True
+                text = notifier.site_down(service_id, host, regions, datetime.fromisoformat(alert["since"]))
+                messages.append(text)
+                events.append(Event("site_down", service_id, host, text))
+            continue
+        alert["down"] = 0
+        if not alert["alerted"]:
+            alert.update(up=0, since=None)
+            continue
+        alert["up"] += 1
+        if alert["up"] >= SITE_UP_RUNS:
+            text = notifier.site_back(service_id, host, datetime.fromisoformat(alert["since"]), now)
+            messages.append(text)
+            events.append(Event("site_back", service_id, host, text))
+            alert.update(up=0, since=None, alerted=False)
+    return messages
+
+
+def check_disk(state, free_mb):
+    """A message when free space on the VPS gets low, and once more when it is back."""
+    if free_mb is None:
+        return []
+    if free_mb < DISK_LOW_MB and not state.get("disk_low"):
+        state["disk_low"] = True
+        return [notifier.disk_low(free_mb)]
+    if free_mb >= DISK_OK_MB and state.get("disk_low"):
+        state["disk_low"] = False
+        return [notifier.disk_ok(free_mb)]
+    return []
+
+
+def _week(local):
+    year, week, _ = local.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def weekly_due(state, now):
+    """Once a week, from Monday HEARTBEAT_HOUR_MSK on (a later day if the VPS was down then)."""
+    local = now.astimezone(MSK)
+    started = local.weekday() > 0 or local.hour >= HEARTBEAT_HOUR_MSK
+    return started and state.get("last_weekly") != _week(local)
+
+
+def weekly_sent(state, now):
+    state["last_weekly"] = _week(now.astimezone(MSK))

@@ -311,7 +311,7 @@ def test_old_single_service_state_moves_under_vtb(tmp_path):
                     ' "recovery_streak": 1, "sources": {"downradar": {"last": "OUTAGE"}},'
                     ' "telegram_last_id": 7, "last_heartbeat": "2026-10-05"}', encoding="utf-8")
     state = st.load_state(path)
-    assert set(state) == {"services", "telegram_last_id", "last_heartbeat"}
+    assert set(state) == {"services", "telegram_last_id", "last_heartbeat", "disk_low", "last_weekly"}
     assert V(state)["incident"]["sources"] == ["downradar"]
     assert V(state)["recovery_streak"] == 1
     assert V(state)["sources"]["downradar"]["last"] == OUTAGE
@@ -365,3 +365,79 @@ def test_failed_save_keeps_the_previous_state(tmp_path, monkeypatch):
         st.save_state(path, {"last_heartbeat": "2026-10-22"})
     assert st.load_state(path)["last_heartbeat"] == "2026-10-21"
     assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+
+
+def site(ru=(4, 4), world=(4, 4)):
+    from monitor.availability import Point, Reach
+    return {region: Reach("db.vtb.ru", region, [Point(f"п{i}", i < up, None, "таймаут" if i >= up else "HTTP 200")
+                                                 for i in range(total)])
+            for region, (up, total) in (("ru", ru), ("world", world))}
+
+
+def minutes(n):
+    return datetime(2026, 10, 22, 7, 30, tzinfo=timezone.utc) + timedelta(minutes=n)  # 10:30 MSK
+
+
+def test_site_down_in_russia_alerts_after_two_runs_and_once():
+    state = st.new_state()
+    events = []
+    assert st.process_sites(state, "business", {"db.vtb.ru": site(ru=(0, 4))}, minutes(0), events) == []
+    [text] = st.process_sites(state, "business", {"db.vtb.ru": site(ru=(0, 4))}, minutes(5), events)
+    assert text.startswith("🔴 ВТБ Бизнес-онлайн: db.vtb.ru не открывается из России (с ")
+    assert "п0 ❌ таймаут" in text
+    assert "Из-за рубежа открывается: 4/4 — сбой или блокировка внутри России." in text
+    assert [e.kind for e in events] == ["site_down"] and events[0].source == "db.vtb.ru"
+    assert st.process_sites(state, "business", {"db.vtb.ru": site(ru=(0, 4))}, minutes(10)) == []
+    # one answer is not the end yet, two in a row is
+    assert st.process_sites(state, "business", {"db.vtb.ru": site(ru=(1, 4))}, minutes(15)) == []
+    [back] = st.process_sites(state, "business", {"db.vtb.ru": site(ru=(3, 4))}, minutes(20), events)
+    assert back.startswith("✅ ВТБ Бизнес-онлайн: db.vtb.ru снова открывается из России")
+    assert "Не открывался 20 мин" in back and events[-1].kind == "site_back"
+
+
+def test_site_down_everywhere_says_so():
+    state = st.new_state()
+    for n in (0, 5):
+        out = st.process_sites(state, "business", {"db.vtb.ru": site(ru=(0, 4), world=(0, 4))}, minutes(n))
+    assert "Из-за рубежа тоже не открывается (0/4) — похоже, сайт лёг целиком." in out[0]
+
+
+def test_site_blip_and_too_few_points_do_not_alert():
+    state = st.new_state()
+    runs = [site(ru=(0, 4)), site(ru=(2, 4)), site(ru=(0, 4)),
+            site(ru=(0, 1)), site(ru=(0, 1))]  # check-host down: only the VPS point is left
+    assert all(st.process_sites(state, "business", {"db.vtb.ru": r}, minutes(5 * i)) == []
+               for i, r in enumerate(runs))
+
+
+def test_site_alert_survives_save_and_load(tmp_path):
+    state = st.new_state()
+    st.process_sites(state, "business", {"db.vtb.ru": site(ru=(0, 4))}, minutes(0))
+    st.save_state(tmp_path / "s.json", state)
+    state = st.load_state(tmp_path / "s.json")
+    assert st.process_sites(state, "business", {"db.vtb.ru": site(ru=(0, 4))}, minutes(5))
+
+
+def test_disk_low_alerts_once_and_clears_with_margin():
+    state = st.new_state()
+    assert st.check_disk(state, 5000) == [] and st.check_disk(state, None) == []
+    [low] = st.check_disk(state, 420)
+    assert low.startswith("⚠️ На сервере оповещателя осталось 420 МБ места.")
+    assert st.check_disk(state, 300) == [] and st.check_disk(state, 700) == []
+    [ok] = st.check_disk(state, 9000)
+    assert ok == "✅ Место на сервере оповещателя снова есть: 9000 МБ."
+    assert st.check_disk(state, 9000) == []
+
+
+def test_weekly_report_is_due_once_a_week_from_monday_9_msk():
+    msk = lambda d, h: datetime(2026, 10, d, h, 0, tzinfo=timezone(timedelta(hours=3)))  # noqa: E731
+    state = st.new_state()
+    st.weekly_sent(state, msk(18, 12))                 # Sunday: week 42
+    assert not st.weekly_due(state, msk(19, 8))        # Monday before 9
+    assert st.weekly_due(state, msk(19, 9))
+    st.weekly_sent(state, msk(19, 9))
+    assert not st.weekly_due(state, msk(22, 15))       # Thursday, already sent
+    assert st.weekly_due(state, msk(26, 9))            # next Monday
+    late = st.new_state()
+    st.weekly_sent(late, msk(17, 9))
+    assert st.weekly_due(late, msk(20, 3))             # the VPS was down on Monday: Tuesday night

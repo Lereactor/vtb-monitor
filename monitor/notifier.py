@@ -84,6 +84,44 @@ def incident_resolved(svc, service_id, now):
             f"Сбой длился {minutes} мин ({_hm(started)}–{_hm(now)} МСК).")
 
 
+def site_down(service_id, host, regions, since):
+    """regions: {region: availability.Reach} from the latest check."""
+    home, world = regions.get("ru"), regions.get("world")
+    lines = [f"🔴 {_title(service_id)}: {host} не открывается из России (с {_hm(since)} МСК)",
+             f"Ни одна точка проверки в России не получила ответ 10 минут подряд: {home.details()}."]
+    if world and world.total:
+        if world.up == 0:
+            lines.append(f"Из-за рубежа тоже не открывается ({world.up}/{world.total}) — похоже, сайт лёг целиком.")
+        else:
+            lines.append(f"Из-за рубежа открывается: {world.up}/{world.total} — сбой или блокировка внутри России.")
+    lines.append(f"https://{host}/")
+    return "\n".join(lines)
+
+
+def site_back(service_id, host, since, now):
+    minutes = int((now - since).total_seconds() // 60)
+    return (f"✅ {_title(service_id)}: {host} снова открывается из России\n"
+            f"Не открывался {minutes} мин ({_hm(since)}–{_hm(now)} МСК).")
+
+
+def disk_low(free_mb):
+    return (f"⚠️ На сервере оповещателя осталось {free_mb} МБ места.\n"
+            "Когда место кончится, проверки остановятся. Нужно почистить диск или докупить место.")
+
+
+def disk_ok(free_mb):
+    return f"✅ Место на сервере оповещателя снова есть: {free_mb} МБ."
+
+
+def run_failing(runs, error):
+    return (f"⚠️ Оповещатель ВТБ не работает: проверка завершается ошибкой (уже {runs} раза подряд).\n"
+            f"Ошибка: {error}\nПока это не исправлено, о сбоях ВТБ сообщений не будет.")
+
+
+def run_recovered(runs):
+    return f"✅ Оповещатель ВТБ снова работает (ошибок подряд до этого: {runs})."
+
+
 def source_down(service_id, result):
     """Log line; the chat gets sources_changed, with the status of every check."""
     return f"{_title(service_id)} · {TITLES[result.source]} не отвечает ({result.details})"
@@ -139,7 +177,7 @@ def official_post(post):
     return f"📢 ВТБ официально сообщает {what}{about}\n«{text}»\n{post.url}"
 
 
-LOW_DISK_MB = 200
+LOW_DISK_MB = 500  # same as state.DISK_LOW_MB
 
 
 def _sites(state):
@@ -192,12 +230,15 @@ def dispatch_github(token, repo, messages, session=requests):
 
     Used where api.telegram.org is blocked but api.github.com is not.
     """
+    start_workflow(token, repo, "notify.yml",
+                   {"messages": json.dumps([_clamp(m) for m in messages], ensure_ascii=False)}, session)
+
+
+def start_workflow(token, repo, workflow, inputs=None, session=requests):
     resp = session.post(
-        f"https://api.github.com/repos/{repo}/actions/workflows/notify.yml/dispatches",
+        f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches",
         headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-        json={"ref": "main",
-              "inputs": {"messages": json.dumps([_clamp(m) for m in messages], ensure_ascii=False)}},
+        json={"ref": "main", "inputs": inputs or {}},
         timeout=15)
     if resp.status_code != 204:
         raise RuntimeError(f"GitHub dispatch: HTTP {resp.status_code} {resp.text[:200]}")
-

@@ -27,6 +27,7 @@ SOURCES = {module.NAME: module for module in (detector404, downreport, downradar
 SAME_SITE_PAUSE = 5
 sleep = time.sleep  # replaced in tests
 check_sites = availability.check  # replaced in tests
+FAIL_ALERT_RUNS = 3  # 15 minutes of failed runs: tell the chat the notifier itself is down
 
 
 def _crash_result(name, exc):
@@ -50,10 +51,11 @@ def _safe_telegram(last_id, session):
 
 
 def run(state_path, deliver, now=None, session=None, detectors=True, channel=True,
-        history_path=None):
+        history_path=None, start_weekly=None):
     """deliver(messages) must raise on failure: then state is not saved and the run is retried.
 
     history_path: also record every check and event there (the VPS run).
+    start_weekly: starts the weekly picture report (the VPS run); retried next run if it fails.
     """
     session = session or requests.Session()
     now = now or datetime.now(timezone.utc)
@@ -86,6 +88,10 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
     for service_id, service_results in results.items():
         if service_results:
             messages += st.process(state, service_id, service_results, now, events)
+    for service_id, hosts in reach.items():
+        messages += st.process_sites(state, service_id, hosts, now, events)
+    if detectors:  # the VPS run: its own disk
+        messages += st.check_disk(state, _free_mb(state_path))
     source_events = [e for e in events if e.kind in ("source_down", "source_back")]
     if source_events:
         messages.append(notifier.sources_changed(state, source_events))
@@ -95,6 +101,12 @@ def run(state_path, deliver, now=None, session=None, detectors=True, channel=Tru
 
     if messages:
         deliver(messages)
+    if start_weekly and st.weekly_due(state, now):
+        try:
+            start_weekly()
+            st.weekly_sent(state, now)
+        except Exception as exc:  # noqa: BLE001
+            print(f"weekly report: {exc.__class__.__name__}: {exc}")
     st.save_state(state_path, state)
     if posts:  # for the site's history on the VPS, which cannot reach Telegram
         official_posts.append(Path(state_path).with_name("posts.json"), posts, now)
@@ -152,6 +164,46 @@ def _free_mb(path):
         return None
 
 
+def guarded(run_once, deliver, counter):
+    """Runs run_once(); after FAIL_ALERT_RUNS failures in a row tells the chat, and again on recovery.
+
+    counter: a file with the number of failures so far. It lives in /dev/shm on the VPS (RAM),
+    so it still works when the disk is full, which is one way the run fails.
+    """
+    try:
+        failures = int(counter.read_text())
+    except (OSError, ValueError):
+        failures = 0
+    try:
+        result = run_once()
+    except Exception as exc:
+        failures += 1
+        _write_counter(counter, failures)
+        if failures == FAIL_ALERT_RUNS:
+            try:
+                deliver([notifier.run_failing(failures, f"{exc.__class__.__name__}: {exc}"[:300])])
+            except Exception as send_exc:  # noqa: BLE001
+                print(f"failure alert not sent: {send_exc.__class__.__name__}: {send_exc}")
+        raise
+    if failures:
+        _write_counter(counter, 0)
+        if failures >= FAIL_ALERT_RUNS:
+            deliver([notifier.run_recovered(failures)])
+    return result
+
+
+def _write_counter(counter, value):
+    try:
+        counter.write_text(str(value))
+    except OSError as exc:
+        print(f"failure counter: {exc.__class__.__name__}: {exc}")
+
+
+def _counter_path(state_path):
+    shm = Path("/dev/shm")
+    return shm / "vtb-monitor-failures" if shm.is_dir() else Path(state_path).with_name("failures")
+
+
 def _publish_site(db, state, now):
     """Only where the site is configured (the VPS): SITE_REMOTE, SITE_KEY, SITE_SALT."""
     env = os.environ
@@ -193,9 +245,19 @@ def main():
     deliver = _deliverer("print" if args.dry_run else args.via)
     if os.environ.get("TEST_MESSAGE") == "true":
         deliver(["✅ Тестовое сообщение: оповещатель ВТБ подключён"])
-    run(args.state, deliver,
-        detectors=args.only in (None, "detectors"), channel=args.only in (None, "channel"),
-        history_path=args.history)
+    start_weekly = None
+    if args.via == "github" and not args.dry_run and args.only == "detectors":
+        token, repo = os.environ["GITHUB_TOKEN"], os.environ["GITHUB_REPO"]
+        start_weekly = lambda: notifier.start_workflow(token, repo, "weekly.yml")  # noqa: E731
+
+    def run_once():
+        return run(args.state, deliver,
+                   detectors=args.only in (None, "detectors"), channel=args.only in (None, "channel"),
+                   history_path=args.history, start_weekly=start_weekly)
+    if args.only == "detectors":  # the VPS; GitHub reports its own failed runs
+        guarded(run_once, deliver, _counter_path(args.state))
+    else:
+        run_once()
 
 
 if __name__ == "__main__":

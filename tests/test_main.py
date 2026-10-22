@@ -276,3 +276,87 @@ def test_site_availability_failure_does_not_block_alerts(tmp_path, sources, monk
     sent = []
     main.run(tmp_path / "state.json", sent.extend, now=NOW, channel=False)
     assert sent and "Сайты открываются" not in sent[0]
+
+
+def test_site_down_alert_from_the_run(tmp_path, sources, monkeypatch):
+    monkeypatch.setattr(main, "check_sites",
+                        lambda hosts, session: {h: reach(h, ru=(0, 4) if h == "db.vtb.ru" else (4, 4)) for h in hosts})
+    path = tmp_path / "state.json"
+    main.run(path, lambda m: None, now=NOW, channel=False)
+    sent = []
+    main.run(path, sent.extend, now=NOW.replace(minute=35), channel=False, history_path=tmp_path / "h.db")
+    assert [m.splitlines()[0] for m in sent] == ["🔴 ВТБ Бизнес-онлайн: db.vtb.ru не открывается из России (с 09:30 МСК)"]
+    kinds = history.connect(tmp_path / "h.db").execute("SELECT kind, source FROM events").fetchall()
+    assert ("site_down", "db.vtb.ru") in kinds
+
+
+def test_low_disk_alert_from_the_run(tmp_path, sources, monkeypatch):
+    monkeypatch.setattr(main, "_free_mb", lambda path: 300)
+    sent = []
+    main.run(tmp_path / "state.json", sent.extend, now=NOW, channel=False)
+    assert any(m.startswith("⚠️ На сервере оповещателя осталось 300 МБ") for m in sent)
+    sent = []
+    main.run(tmp_path / "state.json", sent.extend, now=NOW, channel=False)
+    assert sent == []
+
+
+def test_guarded_reports_the_third_failure_in_a_row_and_recovery(tmp_path):
+    counter = tmp_path / "failures"
+    sent = []
+
+    def broken():
+        raise OSError(28, "No space left on device")
+
+    for _ in range(4):
+        with pytest.raises(OSError):
+            main.guarded(broken, sent.extend, counter)
+    assert len(sent) == 1 and sent[0].startswith("⚠️ Оповещатель ВТБ не работает")
+    assert "уже 3 раза подряд" in sent[0] and "No space left on device" in sent[0]
+    assert main.guarded(lambda: "ok", sent.extend, counter) == "ok"
+    assert sent[-1] == "✅ Оповещатель ВТБ снова работает (ошибок подряд до этого: 4)."
+    assert counter.read_text() == "0"
+    main.guarded(lambda: "ok", sent.extend, counter)
+    assert len(sent) == 2
+
+
+def test_guarded_stays_quiet_on_a_single_failure(tmp_path):
+    counter = tmp_path / "failures"
+    sent = []
+    with pytest.raises(RuntimeError):
+        main.guarded(lambda: (_ for _ in ()).throw(RuntimeError("blip")), sent.extend, counter)
+    main.guarded(lambda: None, sent.extend, counter)
+    assert sent == []
+
+
+def test_guarded_failure_alert_that_cannot_be_sent_still_raises(tmp_path, capsys):
+    counter = tmp_path / "failures"
+    counter.write_text("2")
+
+    def deliver(messages):
+        raise RuntimeError("GitHub down")
+
+    with pytest.raises(ValueError):
+        main.guarded(lambda: (_ for _ in ()).throw(ValueError("x")), deliver, counter)
+    assert "failure alert not sent: RuntimeError" in capsys.readouterr().out
+
+
+def test_weekly_report_is_started_once(tmp_path, sources):
+    started = []
+    path = tmp_path / "state.json"
+    main.run(path, lambda m: None, now=NOW, channel=False, start_weekly=lambda: started.append(1))
+    main.run(path, lambda m: None, now=NOW, channel=False, start_weekly=lambda: started.append(1))
+    assert started == [1]
+
+
+def test_weekly_report_failure_is_retried_and_does_not_block(tmp_path, sources, capsys):
+    path = tmp_path / "state.json"
+
+    def broken():
+        raise RuntimeError("GitHub down")
+
+    sent = []
+    main.run(path, sent.extend, now=NOW, channel=False, start_weekly=broken)
+    assert sent and "weekly report: RuntimeError: GitHub down" in capsys.readouterr().out
+    started = []
+    main.run(path, lambda m: None, now=NOW, channel=False, start_weekly=lambda: started.append(1))
+    assert started == [1]
