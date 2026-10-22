@@ -9,7 +9,7 @@ OK_HTML = (Path(__file__).parent / "fixtures" / "downradar_ok.html").read_text(e
 
 
 def with_hour(html, count):
-    return re.sub(r'(За последний час - <b[^>]*>)\d+', rf'\g<1>{count}', html)
+    return re.sub(r'((?:За последний час|Жалоб за час) - <b[^>]*>)\d+', rf'\g<1>{count}', html)
 
 
 
@@ -107,3 +107,25 @@ def test_business_page_alerts_on_fewer_complaints():
     html = html.replace("Статус Db.vtb.ru : нет проблем", "Статус Db.vtb.ru : есть проблемы")
     assert downradar.parse(with_hour(html, 2), "db.vtb.ru").status == OK
     assert downradar.parse(with_hour(html, 3), "db.vtb.ru").status == OUTAGE
+
+
+# since 17.10.2026 the page says «Жалоб за час - N» instead of «За последний час - N»
+DB_HTML = (Path(__file__).parent / "fixtures" / "downradar_db_ok.html").read_text(encoding="utf-8")
+
+
+def test_new_layout_hour_count():
+    result = downradar.parse(DB_HTML, "db.vtb.ru")
+    assert result.status == OK
+    assert result.details == "нет проблем, жалоб за час: 0"
+    html = DB_HTML.replace("Статус Db.vtb.ru : нет проблем", "Статус Db.vtb.ru : есть проблемы")
+    assert downradar.parse(with_hour(html, 2), "db.vtb.ru").status == OK
+    assert downradar.parse(with_hour(html, 3), "db.vtb.ru").status == OUTAGE
+
+
+def test_missing_hour_count_is_error():
+    # without the count the threshold cannot work: report the page change instead of alerting
+    html = re.sub(r"Жалоб за час - <b[^>]*>\d+</b>", "", DB_HTML)
+    for page_html in (html, html.replace("Статус Db.vtb.ru : нет проблем", "Статус Db.vtb.ru : есть проблемы")):
+        result = downradar.parse(page_html, "db.vtb.ru")
+        assert result.status == ERROR
+        assert "не найдено число жалоб" in result.details

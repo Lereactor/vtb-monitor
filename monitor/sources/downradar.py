@@ -8,7 +8,8 @@ from .base import ERROR, OK, OUTAGE, FetchError, SourceResult, fetch
 
 NAME = "downradar"
 PAGE = "vtb.ru"
-HOUR_RE = re.compile(r"За последний час\s*-\s*(\d+)")
+# «За последний час - N» until 17.10.2026, «Жалоб за час - N» since
+HOUR_RE = re.compile(r"(?:За последний час|Жалоб за час)\s*-\s*(\d+)", re.I)
 # "есть проблемы" means "more than usual for this hour": on a quiet page (broker.vtb.ru had
 # no complaints in 30 days) one complaint is enough, and on vtb.ru it lingers at 4-9 an hour
 MIN_HOUR_COMPLAINTS = 10
@@ -39,11 +40,15 @@ def parse(html, page=PAGE):
     if status is None:
         return SourceResult(NAME, ERROR, "не найден статус на странице", url)
     hour = HOUR_RE.search(soup.get_text(" "))
-    details = status + (f", жалоб за час: {hour.group(1)}" if hour else "")
+    if hour is None:
+        # the thresholds need the count: without it every "есть проблемы" would be an alert
+        # (that happened for 5 days when the page changed); report it as the site being broken
+        return SourceResult(NAME, ERROR, f"{status}, но не найдено число жалоб за час (страница изменилась?)", url)
+    details = f"{status}, жалоб за час: {hour.group(1)}"
     if status == "нет проблем":
         return SourceResult(NAME, OK, details, url)
     if "есть проблем" in status:
-        if hour and int(hour.group(1)) < MIN_HOUR_COMPLAINTS_BY_PAGE.get(page, MIN_HOUR_COMPLAINTS):
+        if int(hour.group(1)) < MIN_HOUR_COMPLAINTS_BY_PAGE.get(page, MIN_HOUR_COMPLAINTS):
             return SourceResult(NAME, OK, details + " (мало для тревоги)", url)
         return SourceResult(NAME, OUTAGE, details, url)
     return SourceResult(NAME, ERROR, f"неизвестный статус: {status}", url)
