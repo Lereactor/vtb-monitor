@@ -4,6 +4,7 @@ in Russia and abroad. An extra indicator for messages and the site: it never rai
 From Russia VTB serves certificates of the Russian Trusted Root CA (Минцифры), which is not in
 the usual trust stores, so the VPS check trusts it in addition to certifi's roots.
 """
+import atexit
 import os
 import statistics
 import tempfile
@@ -68,15 +69,24 @@ class Reach:
 
 
 def _ca_bundle():
-    """certifi's roots plus the Russian root, written once per process."""
+    """certifi's roots plus the Russian root, written once per process and removed when it exits
+    (a run every 5 minutes otherwise leaves ~190 KB in /tmp each time and fills the disk)."""
     global _bundle
     if _bundle is None:
         handle, path = tempfile.mkstemp(prefix="vtb-ca-", suffix=".pem")
+        atexit.register(_remove, path)
         with os.fdopen(handle, "w", encoding="ascii") as out:
             out.write(Path(certifi.where()).read_text(encoding="ascii") + "\n"
                       + RUSSIAN_ROOT.read_text(encoding="ascii"))
         _bundle = path
     return _bundle
+
+
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def _up(code):

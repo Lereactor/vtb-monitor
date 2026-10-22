@@ -3,6 +3,7 @@
 Each monitored service keeps its own sources and incident under state["services"].
 """
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -99,8 +100,14 @@ def _source(svc, name):
 
 
 def save_state(path, state):
+    """Via a temporary file, so a failed write (e.g. a full disk) keeps the previous state."""
     text = json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    Path(path).write_text(text, encoding="utf-8")
+    tmp = Path(f"{path}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _update_source(svc, service_id, result, incident_open, events):

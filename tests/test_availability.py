@@ -1,4 +1,5 @@
 import json
+import os
 
 import requests
 
@@ -83,3 +84,14 @@ def test_ca_bundle_has_the_russian_root():
     text = open(availability._ca_bundle(), encoding="ascii").read()
     assert availability.RUSSIAN_ROOT.read_text(encoding="ascii").strip() in text
     assert text.count("BEGIN CERTIFICATE") > 100  # and the usual roots
+
+
+def test_ca_bundle_is_removed_when_the_run_ends(monkeypatch):
+    cleanups = []
+    monkeypatch.setattr(availability, "_bundle", None)
+    monkeypatch.setattr(availability.atexit, "register", lambda fn, *args: cleanups.append((fn, args)))
+    path = availability._ca_bundle()
+    assert availability._ca_bundle() == path and len(cleanups) == 1  # one file per run
+    fn, args = cleanups[0]
+    fn(*args)
+    assert not os.path.exists(path)

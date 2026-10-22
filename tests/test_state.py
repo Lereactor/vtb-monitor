@@ -351,3 +351,17 @@ def test_set_sites_keeps_answered_regions():
         "ru": Reach("invest.vtb.ru", "ru", [Point("a", True), Point("b", False)]),
         "world": Reach("invest.vtb.ru", "world")}})
     assert state["services"]["invest"]["sites"] == {"invest.vtb.ru": {"ru": [1, 2]}}
+
+
+def test_failed_save_keeps_the_previous_state(tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    st.save_state(path, {"last_heartbeat": "2026-10-21"})
+
+    def full_disk(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(st.os, "replace", full_disk)
+    with pytest.raises(OSError):
+        st.save_state(path, {"last_heartbeat": "2026-10-22"})
+    assert st.load_state(path)["last_heartbeat"] == "2026-10-21"
+    assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
