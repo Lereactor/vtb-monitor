@@ -1,9 +1,12 @@
 {
+  "disk_low": false,
   "last_heartbeat": "2026-10-22",
+  "last_weekly": null,
   "services": {
     "business": {
       "incident": null,
       "recovery_streak": 0,
+      "site_alerts": {},
       "sites": {},
       "sources": {
         "telegram": {
