@@ -20,7 +20,7 @@
 ## Как устроено
 
 ```
-VPS 4VPS (Новосибирск, 193.233.84.69)
+VPS
 ├── vtb-monitor.timer, каждые 5 мин  → проверка детекторов обоих сервисов
 │                                      → сообщения через GitHub API → workflow «notify» → Telegram
 └── vtb-channel.timer, каждые 5 мин  → запускает workflow «vtb-monitor» на GitHub
